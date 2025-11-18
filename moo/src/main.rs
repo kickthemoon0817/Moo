@@ -1,15 +1,17 @@
 mod engine;
-mod game;
+mod games;
+mod ui;
 
 use anyhow::Result;
-use engine::core::EngineConfig;
 use engine::EngineApp;
+use engine::core::EngineConfig;
+use games::SandboxGame;
 
 fn main() -> Result<()> {
     init_tracing();
 
     let config = EngineConfig::default();
-    let mut app = EngineApp::new(config);
+    let app = EngineApp::new(config, SandboxGame::new());
     app.run()
 }
 
