@@ -26,6 +26,10 @@ pub struct PhaseSpace {
     /// Realistically this would be a Mass Matrix, but for SoA particles, a diagonal is often sufficient.
     pub mass: Vec<f64>,
 
+    /// Collision/Geometric Radius.
+    /// Size: `dof / 3` (One per particle/body).
+    pub radius: Vec<f64>,
+
     // --- Rigid Body Extensions ---
     /// Orientations (Quaternions).
     /// If empty, system is purely particles.
@@ -51,6 +55,7 @@ impl PhaseSpace {
             q: vec![0.0; dof],
             v: vec![0.0; dof],
             mass: vec![1.0; dof],
+            radius: vec![1.0; dof / 3],
             rot: Vec::new(),
             ang_v: Vec::new(),
             inertia: Vec::new(),
@@ -64,6 +69,7 @@ impl PhaseSpace {
         self.q.resize(new_dof, 0.0);
         self.v.resize(new_dof, 0.0);
         self.mass.resize(new_dof, 1.0);
+        self.radius.resize(new_dof / 3, 1.0);
     }
     
     /// Resize rigid body storage.
