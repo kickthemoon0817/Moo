@@ -71,6 +71,15 @@ impl PhaseSpace {
         self.mass.resize(new_dof, 1.0);
         self.radius.resize(new_dof / 3, 1.0);
     }
+
+    /// Convenience for setting isotropic particle mass across x/y/z DOF.
+    pub fn set_particle_mass(&mut self, particle_idx: usize, mass: f64) {
+        let base = particle_idx * 3;
+        debug_assert!(base + 2 < self.mass.len());
+        self.mass[base] = mass;
+        self.mass[base + 1] = mass;
+        self.mass[base + 2] = mass;
+    }
     
     /// Resize rigid body storage.
     pub fn resize_rigid(&mut self, count: usize) {
