@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use winit::window::Window;
 use wgpu::util::DeviceExt;
 use glam::Mat4;
@@ -56,16 +57,14 @@ pub struct ScientificRenderer {
 }
 
 impl ScientificRenderer {
-    pub async fn new(window: &Window) -> Self {
+    pub async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
-        
-        let surface = unsafe { 
-             std::mem::transmute(instance.create_surface(window).unwrap())
-        };
+
+        let surface = instance.create_surface(window).unwrap();
 
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
