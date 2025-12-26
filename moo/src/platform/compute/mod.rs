@@ -4,6 +4,7 @@ pub struct ComputeEngine {
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::ComputePipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     // Buffers
     particle_buffer_a: wgpu::Buffer,
@@ -131,6 +132,7 @@ impl ComputeEngine {
             device,
             queue,
             pipeline,
+            bind_group_layout,
             bind_group,
             particle_buffer_a,
             particle_buffer_b,
@@ -156,8 +158,26 @@ impl ComputeEngine {
         }
 
         self.queue.submit(Some(encoder.finish()));
-        
-        // Swap buffers? For now simple A->B step.
-        // In real impl, we'd swap bind group bindings or copy B->A.
+
+        // Ping-pong buffers so the next step reads the latest output.
+        std::mem::swap(&mut self.particle_buffer_a, &mut self.particle_buffer_b);
+        self.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.particle_buffer_a.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.particle_buffer_b.as_entire_binding(),
+                },
+            ],
+            label: Some("Compute Bind Group"),
+        });
     }
 }
