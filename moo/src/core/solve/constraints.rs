@@ -47,17 +47,33 @@ impl Constraint for FloorConstraint {
 
 pub struct SphereConstraint {
     pub restitution: f64,
+    /// Minimum separation used to avoid division by zero.
+    pub min_separation: f64,
 }
 
 impl SphereConstraint {
     pub fn new(restitution: f64) -> Self {
-        Self { restitution }
+        Self {
+            restitution,
+            min_separation: DEFAULT_MIN_SEPARATION,
+        }
+    }
+
+    pub fn with_min_separation(restitution: f64, min_separation: f64) -> Self {
+        Self {
+            restitution,
+            min_separation: min_separation.abs(),
+        }
     }
 }
+
+const DEFAULT_MIN_SEPARATION: f64 = 1e-6;
 
 impl Constraint for SphereConstraint {
     fn project(&self, state: &mut PhaseSpace) {
         let n = state.dof / 3;
+        let min_sep = self.min_separation.max(DEFAULT_MIN_SEPARATION);
+        let min_sep_sq = min_sep * min_sep;
         for i in 0..n {
             for j in (i + 1)..n {
                 let idx_i = i * 3;
@@ -71,9 +87,26 @@ impl Constraint for SphereConstraint {
                 let r_sum = state.radius[i] + state.radius[j];
 
                 if dist_sq < r_sum * r_sum {
-                    let dist = dist_sq.sqrt();
-                    let normal = diff / dist;
+                    let v1 = glam::DVec3::from_slice(&state.v[idx_i..idx_i+3]);
+                    let v2 = glam::DVec3::from_slice(&state.v[idx_j..idx_j+3]);
+                    let rel_vel = v1 - v2;
+
+                    let (normal, dist) = if dist_sq < min_sep_sq {
+                        // Fallback normal to avoid NaNs when particles fully overlap.
+                        let mut fallback = rel_vel.normalize_or_zero();
+                        if fallback.length_squared() == 0.0 {
+                            fallback = glam::DVec3::X;
+                        }
+                        (fallback, min_sep)
+                    } else {
+                        let dist = dist_sq.sqrt();
+                        (diff / dist, dist)
+                    };
+
                     let overlap = r_sum - dist;
+                    if overlap <= 0.0 {
+                        continue;
+                    }
 
                     // 1. Positional Correction (Projection)
                     // Split overlap based on inverse mass? (Simplification: 0.5 each for now)
@@ -88,10 +121,6 @@ impl Constraint for SphereConstraint {
                     state.q[idx_j+2] -= correction.z;
 
                     // 2. Velocity Response
-                    let v1 = glam::DVec3::from_slice(&state.v[idx_i..idx_i+3]);
-                    let v2 = glam::DVec3::from_slice(&state.v[idx_j..idx_j+3]);
-                    
-                    let rel_vel = v1 - v2;
                     let vel_along_normal = rel_vel.dot(normal);
 
                     if vel_along_normal < 0.0 {
