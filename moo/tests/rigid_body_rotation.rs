@@ -40,7 +40,7 @@ fn test_rigid_body_energy_conservation() {
     let steps = 5000;
 
     for _ in 0..steps {
-        solver.step(&mut state, &registry, dt);
+        solver.step(&mut state, &registry, &[], dt);
     }
 
     let final_energy = calc_rot_energy(&state);

@@ -1,6 +1,6 @@
 use moo::core::state::PhaseSpace;
 use moo::core::solve::{Integrator, VelocityVerlet};
-use moo::laws::registry::{LawRegistry, Law};
+use moo::laws::registry::LawRegistry;
 use moo::laws::classical::Spring;
 use moo::core::math::ad::Dual;
 
@@ -57,7 +57,7 @@ fn test_harmonic_oscillator_conservation() {
     let steps = 1000;
 
     for _ in 0..steps {
-        solver.step(&mut state, &registry, dt);
+        solver.step(&mut state, &registry, &[], dt);
     }
 
     let final_energy = calc_energy(&state, &registry);
