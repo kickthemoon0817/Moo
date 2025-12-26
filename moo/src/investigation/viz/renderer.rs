@@ -1,6 +1,6 @@
 use winit::window::Window;
 use wgpu::util::DeviceExt;
-use glam::{Mat4, Vec3};
+use glam::Mat4;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -8,7 +8,21 @@ struct InstanceInput {
     position: [f32; 3],
     radius: f32,
     color: [f32; 3],
-    padding: f32, // align to 16 bytes? (3+1+3+1 = 8 floats = 32 bytes)
+    padding: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LineVertex {
+    pub position: [f32; 3],
+    pub color: [f32; 3],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct UiVertex {
+    pub position: [f32; 2],
+    pub color: [f32; 3],
 }
 
 #[repr(C)]
@@ -23,10 +37,22 @@ pub struct ScientificRenderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
+    
+    // particles
     pipeline: wgpu::RenderPipeline,
     view_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     instance_count: u32,
+
+    // lines
+    line_pipeline: wgpu::RenderPipeline,
+    line_buffer: wgpu::Buffer,
+    line_count: u32,
+    
+    // ui
+    ui_pipeline: wgpu::RenderPipeline,
+    ui_buffer: wgpu::Buffer,
+    ui_count: u32,
 }
 
 impl ScientificRenderer {
@@ -37,10 +63,7 @@ impl ScientificRenderer {
             ..Default::default()
         });
         
-        // Safety: Window outlives the surface in our architecture
         let surface = unsafe { 
-            // We use static lifetime via transmute only because WGPU requires it, 
-            // but we ensure the Window stays alive in the Runner.
              std::mem::transmute(instance.create_surface(window).unwrap())
         };
 
@@ -82,24 +105,16 @@ impl ScientificRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        // Instance Buffer (Initially Empty)
+        // 1. Particle Pipeline
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
-            size: 1024 * 32, // Pre-alloc 32KB
+            size: 1024 * 64, 
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        // Pipeline
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/particles.wgsl"));
         
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[], // TODO: Add uniform bind group
-            push_constant_ranges: &[],
-        });
-        
-        // We actually need a bind group layout for the uniform
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -171,6 +186,130 @@ impl ScientificRenderer {
             multiview: None,
         });
 
+        // 2. Line Pipeline
+        let line_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Line Buffer"),
+            size: 1024 * 64, 
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let line_shader = device.create_shader_module(wgpu::include_wgsl!("shaders/lines.wgsl"));
+        
+        let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Line Pipeline Layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let line_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Line Pipeline"),
+            layout: Some(&line_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &line_shader,
+                entry_point: "vs_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<LineVertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute { // Position
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute { // Color
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                    ],
+                }],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &line_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        // 3. UI Pipeline
+        let ui_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("UI Buffer"),
+            size: 1024 * 64, 
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let ui_shader = device.create_shader_module(wgpu::include_wgsl!("shaders/ui.wgsl"));
+        
+        let ui_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("UI Pipeline Layout"),
+            bind_group_layouts: &[], 
+            push_constant_ranges: &[],
+        });
+
+        let ui_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("UI Pipeline"),
+            layout: Some(&ui_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &ui_shader,
+                entry_point: "vs_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<UiVertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute { // Position vec2
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute { // Color vec3
+                            offset: 8,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                    ],
+                }],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &ui_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineStrip, 
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
         Self {
             surface,
             device,
@@ -181,6 +320,12 @@ impl ScientificRenderer {
             view_buffer,
             instance_buffer,
             instance_count: 0,
+            line_pipeline,
+            line_buffer,
+            line_count: 0,
+            ui_pipeline,
+            ui_buffer,
+            ui_count: 0
         }
     }
 
@@ -201,8 +346,6 @@ impl ScientificRenderer {
             label: Some("Render Encoder"),
         });
 
-        // TODO: Bind Group creation should be done once or cached, but strictly speaking we can do it here if minimal perf hit
-        // Actually we need to store the BindGroup in struct. For now, create it here (inefficient but works for 200 particles).
          let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -234,10 +377,7 @@ impl ScientificRenderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            a: 1.0,
+                            r: 0.05, g: 0.05, b: 0.05, a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -247,11 +387,26 @@ impl ScientificRenderer {
                 timestamp_writes: None,
             });
 
+            // 1. Draw Particles
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(0, &bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-            // Draw 4 vertices (Triangle Strip Quad) * instance_count
             render_pass.draw(0..4, 0..self.instance_count);
+            
+            // 2. Draw Lines
+            if self.line_count > 0 {
+                render_pass.set_pipeline(&self.line_pipeline);
+                render_pass.set_bind_group(0, &bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.line_buffer.slice(..));
+                render_pass.draw(0..self.line_count, 0..1);
+            }
+
+            // 3. Draw UI
+            if self.ui_count > 0 {
+                render_pass.set_pipeline(&self.ui_pipeline);
+                render_pass.set_vertex_buffer(0, self.ui_buffer.slice(..));
+                render_pass.draw(0..self.ui_count, 0..1);
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -260,12 +415,10 @@ impl ScientificRenderer {
         Ok(())
     }
     
-    // Updates instances from PhaseSpace
+    // Updates instances from PhaseSpace (Coordinates)
     pub fn update_instances(&mut self, positions: &[f64], count: usize) {
-         // Create InstanceInput data
          let mut data = Vec::with_capacity(count);
          for i in 0..count {
-             // Assuming 3D stride
              let idx = i * 3;
              let x = positions[idx] as f32;
              let y = positions[idx+1] as f32;
@@ -273,13 +426,29 @@ impl ScientificRenderer {
              
              data.push(InstanceInput {
                  position: [x, y, z],
-                 radius: 20.0, // Fixed radius for now
-                 color: [1.0, 1.0, 1.0],
+                 radius: 15.0, 
+                 color: [0.8, 0.8, 0.9],
                  padding: 0.0,
              });
          }
          
          self.instance_count = count as u32;
          self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&data));
+    }
+
+    // New: Update Lines (e.g. axes)
+    pub fn update_lines(&mut self, lines: &[LineVertex]) {
+        self.line_count = lines.len() as u32; // Number of vertices
+        if self.line_count > 0 {
+             self.queue.write_buffer(&self.line_buffer, 0, bytemuck::cast_slice(lines));
+        }
+    }
+
+    // Update UI Lines (e.g. graph)
+    pub fn update_ui_lines(&mut self, lines: &[UiVertex]) {
+        self.ui_count = lines.len() as u32; 
+        if self.ui_count > 0 {
+             self.queue.write_buffer(&self.ui_buffer, 0, bytemuck::cast_slice(lines));
+        }
     }
 }

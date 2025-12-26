@@ -1,13 +1,16 @@
 use winit::{
     event::*,
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::EventLoop,
     window::WindowBuilder,
 };
-use crate::investigation::viz::renderer::ScientificRenderer;
+use crate::investigation::viz::renderer::{ScientificRenderer, LineVertex, UiVertex};
 use crate::core::state::PhaseSpace;
 use crate::core::solve::{Integrator, VelocityVerlet};
+use crate::core::solve::constraints::{Constraint, FloorConstraint, SphereConstraint};
 use crate::laws::registry::LawRegistry;
 use crate::laws::classical::Gravity;
+use crate::investigation::probe::{Probe, EnergyProbe};
+use std::collections::VecDeque;
 
 pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
@@ -20,28 +23,48 @@ pub async fn run() {
     let mut renderer = ScientificRenderer::new(&window).await;
 
     // --- Physics Setup ---
-    // 3-Body Problem (Figure-8 Stability or Random)
-    // Let's do a simple stable-ish config
     let mut state = PhaseSpace::new(3 * 3); // 3 Particles, 3 DOF each
     
-    // P1 (Center)
-    state.q[0] = 0.0; state.q[1] = 0.0; state.q[2] = 0.0;
-    state.mass[0] = 1000.0;
+    // P1 (Falling onto floor)
+    state.q[0] = 0.0; state.q[1] = 100.0; state.q[2] = 0.0;
+    state.v[1] = -50.0; 
+    state.mass[0] = 50.0;
+    state.radius[0] = 15.0; // Visual radius
     
-    // P2 (Orbiting)
-    state.q[3] = 200.0; state.q[4] = 0.0; state.q[5] = 0.0;
-    state.v[4] = 2.0; // Initial velocity Y
+    // P2 (Orbiting / Spinning)
+    state.q[3] = 200.0; state.q[4] = 100.0; state.q[5] = 0.0;
+    state.v[4] = 2.0; 
     state.mass[1] = 10.0;
+    state.radius[1] = 15.0;
 
     // P3 (Orbiting farther)
-    state.q[6] = -300.0; state.q[7] = 100.0; state.q[8] = 0.0;
-    state.v[7] = -1.5;
+    // Move P3 closer to P1 to force collision for demo?
+    // Let's put P3 slightly above P1 to hit it.
+    state.q[6] = 10.0; state.q[7] = 200.0; state.q[8] = 0.0; // Spatially aligned x
+    state.v[7] = -60.0; // Falling fast
     state.mass[2] = 20.0;
+    state.radius[2] = 15.0;
+
+    // --- Rigid Body Setup ---
+    state.resize_rigid(3); 
+    state.inertia[1] = glam::DVec3::new(100.0, 200.0, 300.0); 
+    state.ang_v[1] = glam::DVec3::new(2.0, 5.0, 1.0); 
 
     let mut registry = LawRegistry::new();
-    registry.add(Gravity::new(100.0)); // G=100
+    registry.add(Gravity::new(100.0));
+
+    // --- Constraints ---
+    let floor_y = -300.0;
+    let mut constraints: Vec<Box<dyn Constraint>> = Vec::new();
+    constraints.push(Box::new(FloorConstraint::new(floor_y, 0.9))); 
+    constraints.push(Box::new(SphereConstraint::new(0.95))); // High restitution for bouncy balls
 
     let mut solver = VelocityVerlet;
+    
+    // --- Probe / Graph Setup ---
+    let probe = EnergyProbe;
+    let mut energy_history: VecDeque<f64> = VecDeque::new();
+    let history_len = 500;
     // ---------------------
 
     let _ = event_loop.run(move |event, target| {
@@ -65,15 +88,102 @@ pub async fn run() {
                 }
                 WindowEvent::RedrawRequested => {
                     // Physics Step
-                    // Run multiple substeps per frame for stability/speed
                     for _ in 0..10 {
-                        solver.step(&mut state, &registry, 0.016 / 10.0);
+                        solver.step(&mut state, &registry, &constraints, 0.016 / 10.0);
+                    }
+
+                    // Probe Data
+                    let energy = probe.measure(&state, &registry);
+                    energy_history.push_back(energy);
+                    if energy_history.len() > history_len {
+                        energy_history.pop_front();
                     }
                     
-                    // Sync to Renderer
+                    // Sync to Renderer (Particles)
                     renderer.update_instances(&state.q, 3);
 
-                    // Draw
+                    // Sync Lines 
+                    let mut lines = Vec::new();
+                    
+                    // 1. Draw Floor Grid
+                    let grid_size = 1000.0;
+                    let step = 100.0;
+                    let y = floor_y as f32;
+                    let color = [0.2, 0.2, 0.2];
+                    
+                    let mut x = -grid_size;
+                    while x <= grid_size {
+                        lines.push(LineVertex { position: [x, y, -grid_size], color });
+                        lines.push(LineVertex { position: [x, y,  grid_size], color });
+                        x += step;
+                    }
+                    let mut z = -grid_size;
+                    while z <= grid_size {
+                        lines.push(LineVertex { position: [-grid_size, y, z], color });
+                        lines.push(LineVertex { position: [ grid_size, y, z], color });
+                        z += step;
+                    }
+
+                    // 2. Draw Axes for Rigid Bodies
+                    let axis_len = 30.0;
+                    for i in 0..3 {
+                        let idx = i * 3;
+                        let cx = state.q[idx];
+                        let cy = state.q[idx+1];
+                        let cz = state.q[idx+2];
+                        let center = glam::Vec3::new(cx as f32, cy as f32, cz as f32);
+
+                        let rot = state.rot[i]; 
+                        let rot_f = glam::Quat::from_xyzw(
+                            rot.x as f32, rot.y as f32, rot.z as f32, rot.w as f32
+                        );
+
+                        let x_axis = rot_f * glam::Vec3::X * axis_len;
+                        let y_axis = rot_f * glam::Vec3::Y * axis_len;
+                        let z_axis = rot_f * glam::Vec3::Z * axis_len;
+
+                        lines.push(LineVertex { position: center.into(), color: [1.0, 0.0, 0.0] });
+                        lines.push(LineVertex { position: (center + x_axis).into(), color: [1.0, 0.0, 0.0] });
+
+                        lines.push(LineVertex { position: center.into(), color: [0.0, 1.0, 0.0] });
+                        lines.push(LineVertex { position: (center + y_axis).into(), color: [0.0, 1.0, 0.0] });
+
+                        lines.push(LineVertex { position: center.into(), color: [0.0, 0.0, 1.0] });
+                        lines.push(LineVertex { position: (center + z_axis).into(), color: [0.0, 0.0, 1.0] });
+                    }
+                    
+                    renderer.update_lines(&lines);
+
+                    // 3. Draw UI Graph (Energy)
+                    let mut ui_lines = Vec::new();
+                    if !energy_history.is_empty() {
+                         // Normalize
+                         let min_e = energy_history.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+                         let max_e = energy_history.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+                         let mut range = max_e - min_e;
+                         if range.abs() < 1e-6 { range = 1.0; } // Avoid div by zero
+                         
+                         // Screen Space: x [-0.9, 0.9], y [0.6, 0.9] (Top Area)
+                         let start_x = -0.9;
+                         let width = 1.8;
+                         let start_y = 0.6;
+                         let height = 0.3;
+                         
+                         for (i, &e) in energy_history.iter().enumerate() {
+                             let t = i as f64 / (history_len - 1) as f64;
+                             let x = start_x + t * width;
+                             // Normalize e to [0, 1] relative to window
+                             let norm_e = (e - min_e) / range;
+                             let y = start_y + norm_e * height;
+                             
+                             ui_lines.push(UiVertex { 
+                                 position: [x as f32, y as f32], 
+                                 color: [1.0, 1.0, 0.0] // Yellow
+                             });
+                         }
+                    }
+                    renderer.update_ui_lines(&ui_lines);
+
                     match renderer.render() {
                         Ok(_) => {}
                         Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size),
