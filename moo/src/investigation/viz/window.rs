@@ -23,41 +23,46 @@ pub async fn run() {
     let mut renderer = ScientificRenderer::new(&window).await;
 
     // --- Physics Setup ---
-    let mut state = PhaseSpace::new(3 * 3); // 3 Particles, 3 DOF each
+    let n_fluid = 100;
+    let dof = n_fluid * 3;
+    let mut state = PhaseSpace::new(dof); // Fluid particles
     
-    // P1 (Falling onto floor)
-    state.q[0] = 0.0; state.q[1] = 100.0; state.q[2] = 0.0;
-    state.v[1] = -50.0; 
-    state.mass[0] = 50.0;
-    state.radius[0] = 15.0; // Visual radius
+    // Initialize Fluid Block
+    let spacing = 10.0;
+    let cols = 10;
+    let start_y = 100.0;
     
-    // P2 (Orbiting / Spinning)
-    state.q[3] = 200.0; state.q[4] = 100.0; state.q[5] = 0.0;
-    state.v[4] = 2.0; 
-    state.mass[1] = 10.0;
-    state.radius[1] = 15.0;
-
-    // P3 (Orbiting farther)
-    // Move P3 closer to P1 to force collision for demo?
-    // Let's put P3 slightly above P1 to hit it.
-    state.q[6] = 10.0; state.q[7] = 200.0; state.q[8] = 0.0; // Spatially aligned x
-    state.v[7] = -60.0; // Falling fast
-    state.mass[2] = 20.0;
-    state.radius[2] = 15.0;
-
-    // --- Rigid Body Setup ---
-    state.resize_rigid(3); 
-    state.inertia[1] = glam::DVec3::new(100.0, 200.0, 300.0); 
-    state.ang_v[1] = glam::DVec3::new(2.0, 5.0, 1.0); 
+    for i in 0..n_fluid {
+        let col = i % cols;
+        let row = i / cols;
+        state.q[i*3] = (col as f64) * spacing - (cols as f64 * spacing / 2.0); // Center X
+        state.q[i*3+1] = start_y + (row as f64) * spacing;
+        state.q[i*3+2] = 0.0;
+        
+        state.mass[i*3] = 1.0;
+        state.mass[i*3+1] = 1.0;
+        state.mass[i*3+2] = 1.0;
+        
+        state.radius[i] = spacing / 2.0; // Visual radius
+    }
 
     let mut registry = LawRegistry::new();
-    registry.add(Gravity::new(100.0));
+    registry.add(Gravity::new(500.0)); // Strong gravity to pull them down
+    
+    // SPH Law
+    // h = smoothing length ~ 1.5 * spacing
+    // rho0 = mass / volume ~ 1.0 / spacing^3? In 2D/3D it depends.
+    // Let's tune rho0 for stability.
+    // spacing 10 -> vol ~ 1000. m=1 -> rho ~ 0.001? 
+    // Let's use h=25.0, rho0=0.002.
+    use crate::laws::continuum::SPH;
+    registry.add(SPH::new(25.0, 0.002, 10000.0));
 
     // --- Constraints ---
-    let floor_y = -300.0;
+    let floor_y = -200.0;
     let mut constraints: Vec<Box<dyn Constraint>> = Vec::new();
-    constraints.push(Box::new(FloorConstraint::new(floor_y, 0.9))); 
-    constraints.push(Box::new(SphereConstraint::new(0.95))); // High restitution for bouncy balls
+    constraints.push(Box::new(FloorConstraint::new(floor_y, 0.5))); // Low restitution for fluid dampening
+    constraints.push(Box::new(SphereConstraint::new(0.5))); // Particle collisions (backup for SPH)
 
     let mut solver = VelocityVerlet;
     
@@ -100,7 +105,7 @@ pub async fn run() {
                     }
                     
                     // Sync to Renderer (Particles)
-                    renderer.update_instances(&state.q, 3);
+                    renderer.update_instances(&state.q, state.dof / 3);
 
                     // Sync Lines 
                     let mut lines = Vec::new();

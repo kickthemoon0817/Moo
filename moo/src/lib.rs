@@ -13,19 +13,10 @@ pub mod core {
 pub mod laws {
     pub mod registry;
     pub mod classical;
-    pub mod continuum {
-        // Placeholder
-    }
+    pub mod continuum;
 }
 
-pub mod platform {
-    pub mod compute {
-        // Placeholder
-    }
-    pub mod storage {
-        // Placeholder
-    }
-}
+
 
 pub mod investigation {
     pub mod probe;
