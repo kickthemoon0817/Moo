@@ -4,13 +4,27 @@ use crate::laws::registry::Law;
 /// Newtonian Gravity: V = -G * m1 * m2 / r
 pub struct Gravity {
     pub g: f64,
+    /// Softening length to avoid singularities at r=0.
+    pub softening: f64,
 }
 
 impl Gravity {
     pub fn new(g: f64) -> Self {
-        Self { g }
+        Self {
+            g,
+            softening: DEFAULT_SOFTENING,
+        }
+    }
+
+    pub fn with_softening(g: f64, softening: f64) -> Self {
+        Self {
+            g,
+            softening: softening.abs(),
+        }
     }
 }
+
+const DEFAULT_SOFTENING: f64 = 1e-3;
 
 impl Law for Gravity {
     fn potential(&self, q: &[Dual], mass: &[f64]) -> Dual {
@@ -26,6 +40,8 @@ impl Law for Gravity {
              return Dual::constant(0.0);
         }
 
+        let softening_sq = Dual::constant(self.softening.abs() * self.softening.abs());
+
         for i in 0..n_particles {
             for j in (i + 1)..n_particles {
                 let idx_i = i * 3;
@@ -35,8 +51,12 @@ impl Law for Gravity {
                 let dy = q[idx_i+1] - q[idx_j+1];
                 let dz = q[idx_i+2] - q[idx_j+2]; 
 
-                let dist_sq = dx * dx + dy * dy + dz * dz; 
-                let dist = Dual::new(dist_sq.val.sqrt(), 0.5 * dist_sq.der / dist_sq.val.sqrt()); 
+                let dist_sq = dx * dx + dy * dy + dz * dz + softening_sq;
+                let dist_val = dist_sq.val.sqrt();
+                if dist_val == 0.0 {
+                    continue;
+                }
+                let dist = Dual::new(dist_val, 0.5 * dist_sq.der / dist_val);
 
                 // V = -G * m1 * m2 / r
                 let m1m2 = mass[i * mass_stride] * mass[j * mass_stride];
