@@ -1,5 +1,5 @@
 use moo::core::state::PhaseSpace;
-use moo::laws::registry::{LawRegistry, Law};
+use moo::laws::registry::Law;
 use moo::laws::continuum::SPH;
 use moo::core::math::ad::Dual;
 
@@ -15,8 +15,8 @@ fn test_sph_pressure_repulsion() {
     state.q[3] = 0.5; state.q[4] = 0.0; state.q[5] = 0.0;
     
     // Mass 1.0
-    state.mass[0] = 1.0;
-    state.mass[1] = 1.0;
+    state.set_particle_mass(0, 1.0);
+    state.set_particle_mass(1, 1.0);
 
     // 2. Define SPH Law
     let h = 1.0;
