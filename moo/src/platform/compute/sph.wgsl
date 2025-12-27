@@ -92,7 +92,6 @@ fn calc_density(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 
                 let j = pair.particle_id;
                 
-                // --- Interaction p_i, p_j ---
                 let pj = particlesSrc[j];
                 let diff = pi.pos.xyz - pj.pos.xyz;
                 let r2 = dot(diff, diff);
@@ -159,7 +158,6 @@ fn calc_force(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 let j = pair.particle_id;
                 if (i == j) { k++; continue; } 
                 
-                // --- Interaction p_i, p_j ---
                 let pj = particlesSrc[j];
                 let diff = pi.pos.xyz - pj.pos.xyz;
                 let r = length(diff);
@@ -177,7 +175,7 @@ fn calc_force(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     let vel_diff = pj.vel.xyz - pi.vel.xyz;
                     force_visc += (params.viscosity / rho_j) * pj.pos.w * vel_diff * laplacian;
                 }
-                // ----------------------------
+
                 
                 k++;
             }
