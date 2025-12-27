@@ -481,6 +481,40 @@ impl ScientificRenderer {
         &self.queue
     }
 
+    pub fn update_camera_ortho(&mut self, width: f32, height: f32) {
+        // Simple Orthographic projection centered at 0,0
+        // Width/Height = World Units visible
+        let half_w = width * 0.5;
+        let half_h = height * 0.5;
+        
+        let proj = Mat4::orthographic_rh(
+            -half_w, half_w, 
+            -half_h, half_h, 
+            -1000.0, 1000.0
+        );
+        let view = Mat4::look_at_rh(
+            glam::Vec3::new(0.0, 0.0, 100.0), // Camera at +Z
+            glam::Vec3::ZERO,
+            glam::Vec3::Y,
+        );
+        
+        // We pass View and Proj separately? No, shader takes combined view_proj currently.
+        // But for billboarding we usually want separated.
+        // Let's stick to combined first to get visibility, then split for billboarding if needed.
+        // Actually, for "View Space Billboarding" we need the View Matrix.
+        // But `shaders/particles.wgsl` vs_main takes `vertex_index`.
+        // If we want spherical billboarding, we need the Right and Up vectors of the camera.
+        // In Ortho/Rh/LookAt(0,0,100), Right is X, Up is Y. So it's trivial.
+        // We don't need complex view extraction. Quad is just XY plane aligned. Since it's ortho.
+        
+        let view_proj = proj * view;
+        let uniform = ViewUniform {
+            view_proj: view_proj.to_cols_array_2d(),
+        };
+        
+        self.queue.write_buffer(&self.view_buffer, 0, bytemuck::cast_slice(&[uniform]));
+    }
+
     pub fn render_compute(
         &mut self,
         instance_buffer: &wgpu::Buffer,

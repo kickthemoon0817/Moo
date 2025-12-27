@@ -14,6 +14,8 @@ pub async fn run() {
     let window = Arc::new(window);
 
     let mut renderer = ScientificRenderer::new(window.clone()).await;
+    // Initial Camera
+    renderer.update_camera_ortho(800.0, 600.0);
 
     // --- Physics Setup ---
     let n_fluid = 100;
@@ -68,6 +70,12 @@ pub async fn run() {
                         } => target.exit(),
                         WindowEvent::Resized(physical_size) => {
                             renderer.resize(*physical_size);
+                            // Keep simulation centered. Aspect correct?
+                            // Let's keep strict 800.0 width world units for now.
+                            let aspect = physical_size.width as f32 / physical_size.height as f32;
+                            let world_width = 800.0;
+                            let world_height = world_width / aspect;
+                            renderer.update_camera_ortho(world_width, world_height);
                         }
                         WindowEvent::RedrawRequested => {
                             // GPU Physics Step
