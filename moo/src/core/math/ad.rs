@@ -1,4 +1,4 @@
-use std::ops::{Add, Sub, Mul, Div, Neg};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 /// A Dual number for Forward-Mode Automatic Differentiation.
 /// Represents values in the form `a + bε` where `ε² = 0`.

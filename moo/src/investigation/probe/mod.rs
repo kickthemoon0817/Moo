@@ -1,6 +1,6 @@
+use crate::core::math::ad::Dual;
 use crate::core::state::PhaseSpace;
 use crate::laws::registry::LawRegistry;
-use crate::core::math::ad::Dual;
 
 /// A synchronous probe that extracts a scalar value from the system state.
 pub trait Probe {
@@ -17,7 +17,7 @@ impl Probe for EnergyProbe {
 
     fn measure(&self, state: &PhaseSpace, laws: &LawRegistry) -> f64 {
         let n = state.dof;
-        
+
         // 1. Translational Kinetic T = 0.5 * m * v^2
         let mut kinetic = 0.0;
         for i in 0..n {

@@ -44,12 +44,43 @@ fn vs_main(
 // Fragment Shader
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Round circle
-    let dist = length(in.uv);
-    if (dist > 1.0) {
+    // 1. Calculate signed distance field (sphere)
+    let uv = in.uv; // -1 to 1
+    let r2 = dot(uv, uv);
+    if (r2 > 1.0) {
         discard;
     }
-    // Antialiasing soft edge
-    let alpha = 1.0 - smoothstep(0.9, 1.0, dist);
-    return vec4<f32>(in.color, alpha);
+    
+    // 2. Calculate Normal (Hemisphere)
+    let z = sqrt(1.0 - r2);
+    let normal = vec3<f32>(uv.x, uv.y, z);
+    
+    // 3. Lighting
+    let light_dir = normalize(vec3<f32>(0.5, 0.8, 1.0));
+    
+    // Diffuse
+    let diff = max(dot(normal, light_dir), 0.0);
+    
+    // Specular (Blinn-Phong)
+    let view_dir = vec3<f32>(0.0, 0.0, 1.0); // Ortho: view is always +Z
+    let half_dir = normalize(light_dir + view_dir);
+    let spec = pow(max(dot(normal, half_dir), 0.0), 32.0);
+    
+    // Ambient
+    let ambient = 0.2;
+    
+    // Fresnel Reflection (Mock)
+    let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 2.0);
+    
+    // Composition
+    // Fluid Color (Blue-ish)
+    let fluid_color = in.color; // Using instance color
+    
+    // Combine
+    let val = (vec3(ambient) + vec3(diff)) * fluid_color + vec3(spec * 0.8) + vec3(fresnel * 0.3);
+    
+    // Soft Edge Antialiasing
+    let alpha = smoothstep(1.0, 0.85, sqrt(r2));
+    
+    return vec4<f32>(val, alpha);
 }

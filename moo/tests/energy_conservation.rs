@@ -1,8 +1,8 @@
-use moo::core::state::PhaseSpace;
-use moo::core::solve::{Integrator, VelocityVerlet};
-use moo::laws::registry::LawRegistry;
-use moo::laws::classical::Spring;
 use moo::core::math::ad::Dual;
+use moo::core::solve::{Integrator, VelocityVerlet};
+use moo::core::state::PhaseSpace;
+use moo::laws::classical::Spring;
+use moo::laws::registry::LawRegistry;
 
 #[test]
 fn test_harmonic_oscillator_conservation() {
@@ -13,7 +13,7 @@ fn test_harmonic_oscillator_conservation() {
     state.mass[2] = 1.0;
 
     // Initial Condition: Displaced by 1.0 unit in X
-    state.q[0] = 1.0; 
+    state.q[0] = 1.0;
     // Anchor point (implicit, or we can use 2 particles. Let's use 2 particles for clarity)
     state.resize(6); // 2 particles
     state.mass[0] = 1.0; // P1 mass x
