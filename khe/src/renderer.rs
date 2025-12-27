@@ -50,7 +50,6 @@ pub struct Renderer {
     ui_count: u32,
 }
 
-
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
@@ -71,15 +70,13 @@ impl Renderer {
             .unwrap();
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                    ..Default::default()
-                },
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                ..Default::default()
+            })
             .await
             .unwrap();
 
@@ -107,7 +104,6 @@ impl Renderer {
         });
 
         // 1. Particle Pipeline
-
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/particles.wgsl"));
 
@@ -184,8 +180,6 @@ impl Renderer {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
-
-
 
         // 3. UI Pipeline
         let ui_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -277,10 +271,6 @@ impl Renderer {
         }
     }
 
-
-
-
-
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
@@ -294,18 +284,14 @@ impl Renderer {
         // Width/Height = World Units visible
         let half_w = width * 0.5;
         let half_h = height * 0.5;
-        
-        let proj = Mat4::orthographic_rh(
-            -half_w, half_w, 
-            -half_h, half_h, 
-            -1000.0, 1000.0
-        );
+
+        let proj = Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, -1000.0, 1000.0);
         let view = Mat4::look_at_rh(
             glam::Vec3::new(0.0, 0.0, 100.0), // Camera at +Z
             glam::Vec3::ZERO,
             glam::Vec3::Y,
         );
-        
+
         // We pass View and Proj separately? No, shader takes combined view_proj currently.
         // But for billboarding we usually want separated.
         // Let's stick to combined first to get visibility, then split for billboarding if needed.
@@ -314,13 +300,14 @@ impl Renderer {
         // If we want spherical billboarding, we need the Right and Up vectors of the camera.
         // In Ortho/Rh/LookAt(0,0,100), Right is X, Up is Y. So it's trivial.
         // We don't need complex view extraction. Quad is just XY plane aligned. Since it's ortho.
-        
+
         let view_proj = proj * view;
         let uniform = ViewUniform {
             view_proj: view_proj.to_cols_array_2d(),
         };
-        
-        self.queue.write_buffer(&self.view_buffer, 0, bytemuck::cast_slice(&[uniform]));
+
+        self.queue
+            .write_buffer(&self.view_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
     pub fn render_compute(
@@ -341,7 +328,7 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder (Compute)"),
             });
-            
+
         // --- 1. Main Render Pass (Particles) ---
 
         let bind_group_layout =
@@ -402,34 +389,36 @@ impl Renderer {
                 render_pass.draw(0..self.ui_count, 0..1);
             }
         }
-        
+
         // --- 2. GUI Render Pass ---
         if let Some(gui_renderer) = gui_renderer {
-             // Upload Egui buffers
-             gui_renderer.update_buffers(
-                 &self.device, 
-                 &self.queue, 
-                 &mut encoder, 
-                 gui_primitives, 
-                 screen_descriptor
-             );
-             
-             let mut gui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("GUI Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load, // Draw ON TOP
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            }).forget_lifetime();
-            
+            // Upload Egui buffers
+            gui_renderer.update_buffers(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                gui_primitives,
+                screen_descriptor,
+            );
+
+            let mut gui_pass = encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("GUI Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load, // Draw ON TOP
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                })
+                .forget_lifetime();
+
             gui_renderer.render(&mut gui_pass, gui_primitives, screen_descriptor);
         }
 

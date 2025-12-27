@@ -29,6 +29,18 @@ pub struct ComputeEngine {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct SimConfig {
+    pub dt: f32,
+    pub h: f32,
+    pub rho0: f32,
+    pub stiffness: f32,
+    pub viscosity: f32,
+    pub mouse_pos: [f32; 2],
+    pub mouse_pressed: bool,
+}
+
+#[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Particle {
     pos: [f32; 4], // x, y, z, mass
@@ -574,28 +586,18 @@ impl ComputeEngine {
         queue.write_buffer(&self.particle_buffer_a, 0, bytemuck::cast_slice(&data));
     }
 
-    pub fn write_params(
-        &self,
-        queue: &wgpu::Queue,
-        dt: f32,
-        h: f32,
-        rho0: f32,
-        stiffness: f32,
-        viscosity: f32,
-        mouse_pos: [f32; 2],
-        mouse_pressed: bool,
-    ) {
+    pub fn write_params(&self, queue: &wgpu::Queue, config: SimConfig) {
         let params = SimParams {
-            dt,
-            h,
-            rho0,
-            stiffness,
-            viscosity,
+            dt: config.dt,
+            h: config.h,
+            rho0: config.rho0,
+            stiffness: config.stiffness,
+            viscosity: config.viscosity,
             count: self.particle_count,
             grid_dim: self.grid_dim,
             _pad0: 0,
-            mouse_pos,
-            mouse_pressed: if mouse_pressed { 1 } else { 0 },
+            mouse_pos: config.mouse_pos,
+            mouse_pressed: if config.mouse_pressed { 1 } else { 0 },
             _pad1: 0,
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[params]));
