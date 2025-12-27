@@ -219,34 +219,44 @@ impl ComputeEngine {
             label: Some("Density"),
             layout: Some(&pipeline_layout),
             module: &shader_sph,
-            entry_point: "calc_density",
+            entry_point: Some("calc_density"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
         let force_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Force"),
             layout: Some(&pipeline_layout),
             module: &shader_sph,
-            entry_point: "calc_force",
+            entry_point: Some("calc_force"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
         let grid_indices_pipeline =
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("Grid Indices"),
                 layout: Some(&pipeline_layout),
                 module: &shader_grid,
-                entry_point: "calc_grid_indices",
+                entry_point: Some("calc_grid_indices"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
             });
         let clear_offsets_pipeline =
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("Clear Offsets"),
                 layout: Some(&pipeline_layout),
                 module: &shader_grid,
-                entry_point: "clear_offsets",
+                entry_point: Some("clear_offsets"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
             });
         let find_offsets_pipeline =
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("Find Offsets"),
                 layout: Some(&pipeline_layout),
                 module: &shader_grid,
-                entry_point: "find_offsets",
+                entry_point: Some("find_offsets"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
             });
 
         // Sort Layout (Simplified)
@@ -284,7 +294,9 @@ impl ComputeEngine {
             label: Some("Sort"),
             layout: Some(&sort_pipeline_layout),
             module: &shader_sort,
-            entry_point: "bitonic_sort",
+            entry_point: Some("bitonic_sort"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

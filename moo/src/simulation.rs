@@ -99,8 +99,9 @@ impl Simulation {
                     label: Some("Headless Device"),
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
+                    memory_hints: wgpu::MemoryHints::default(),
+                    ..Default::default()
                 },
-                None,
             )
             .await
             .expect("Failed to create device")

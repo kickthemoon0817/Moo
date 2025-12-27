@@ -27,7 +27,7 @@ async fn run() {
             std::io::stdout().flush().unwrap();
         }
     }
-    device.poll(wgpu::Maintain::Wait);
+    // device.poll(wgpu::Maintain::Poll);
     
     println!("\nSimulated 60 frames in {:.2?}", start.elapsed());
     println!("Engine Integrity Verified.");

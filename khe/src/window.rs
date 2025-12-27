@@ -1,7 +1,11 @@
 use crate::renderer::{LineVertex, Renderer};
 use moo::simulation::Simulation; 
 use std::sync::Arc;
-use winit::{event::*, event_loop::EventLoop, window::WindowBuilder};
+use winit::{event::*, event_loop::EventLoop, window::Window};
+// WindowBuilder removed in 0.30? replaced by Window::builder?
+// No, Window::default_attributes().
+// Let's check window creation code.
+
 use egui_wgpu::Renderer as EguiRenderer;
 use egui_winit::State as EguiState;
 
@@ -37,11 +41,10 @@ impl Gui {
 
 pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new()
-        .with_title("Khe (version 0.0.3)")
-        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
-        .build(&event_loop)
-        .unwrap();
+    let window_attrs = Window::default_attributes()
+        .with_title("Khe (version 0.0.4)")
+        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0));
+    let window = event_loop.create_window(window_attrs).unwrap();
     let window = Arc::new(window);
 
     let mut renderer = Renderer::new(window.clone()).await;
@@ -59,14 +62,16 @@ pub async fn run() {
         egui::ViewportId::ROOT,
         &window, 
         Some(window.scale_factor() as f32), 
-        None
+        None,
+        Some(2048), // Max texture side
     );
     
     let egui_renderer = EguiRenderer::new(
         renderer.device(),
-        wgpu::TextureFormat::Bgra8UnormSrgb, // Surface format
-        None,
-        1,
+        wgpu::TextureFormat::Bgra8UnormSrgb, 
+        egui_wgpu::RendererOptions {
+            ..Default::default() // Implicitly sets multisample_count to 1? Or 4?
+        }, 
     );
     
     let mut gui = Gui::new(egui_ctx, egui_state, egui_renderer);
