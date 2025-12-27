@@ -1192,7 +1192,7 @@ dependencies = [
 
 [[package]]
 name = "khe"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "bytemuck",
  "egui",
