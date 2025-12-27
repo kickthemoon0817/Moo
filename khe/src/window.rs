@@ -38,7 +38,7 @@ impl Gui {
 pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
-        .with_title("Khe (version 0.0.1)")
+        .with_title("Khe (version 0.0.3)")
         .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
         .build(&event_loop)
         .unwrap();
