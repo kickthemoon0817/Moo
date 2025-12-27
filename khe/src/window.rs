@@ -1,12 +1,25 @@
 use crate::renderer::Renderer;
 use moo::simulation::Simulation;
 use std::sync::Arc;
-use winit::{event::*, event_loop::EventLoop, window::Window};
+use winit::{
+    event::*,
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
+    window::Window,
+};
+
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::WindowExtWebSys;
+
+pub struct AsyncInitData {
+    pub renderer: Renderer,
+    pub sim: Simulation,
+    pub gui: Gui,
+}
 
 use egui_wgpu::Renderer as EguiRenderer;
 use egui_winit::State as EguiState;
 
-struct Gui {
+pub struct Gui {
     ctx: egui::Context,
     state: EguiState,
     renderer: EguiRenderer,
@@ -36,11 +49,14 @@ impl Gui {
     }
 }
 
+// Gui struct unchanged
+
 use winit::application::ApplicationHandler;
-use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::WindowId;
 
 struct App {
+    #[allow(unused)]
+    proxy: EventLoopProxy<AsyncInitData>,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     sim: Option<Simulation>,
@@ -52,8 +68,9 @@ struct App {
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(proxy: EventLoopProxy<AsyncInitData>) -> Self {
         Self {
+            proxy,
             window: None,
             renderer: None,
             sim: None,
@@ -64,7 +81,7 @@ impl App {
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<AsyncInitData> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let window_attrs = Window::default_attributes()
@@ -77,66 +94,94 @@ impl ApplicationHandler for App {
             let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
             self.window = Some(window.clone());
 
-            // Blocking Async Init
-            // We use pollster to block on async wgpu creation since winit's run_app is synchronous.
+            // WASM: Append Canvas
+            #[cfg(target_arch = "wasm32")]
+            {
+                use winit::platform::web::WindowExtWebSys;
+                web_sys::window()
+                    .and_then(|win| win.document())
+                    .and_then(|doc| {
+                        let dst = doc.get_element_by_id("khe-canvas")?;
+                        let canvas = window.canvas()?;
+                        dst.append_child(&canvas).ok()?;
+                        Some(())
+                    })
+                    .expect("Failed to append canvas to document");
+            }
 
             let window_clone = window.clone();
+            #[cfg(target_arch = "wasm32")]
+            let proxy = self.proxy.clone();
 
-            pollster::block_on(async move {
-                let mut renderer = Renderer::new(window_clone.clone()).await;
-                renderer.update_camera_ortho(800.0, 600.0); // Hardcoded init
+            // Native: Sync Init using pollster
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let (renderer, sim, gui) = pollster::block_on(async move {
+                    let mut renderer = Renderer::new(window_clone.clone()).await;
+                    renderer.update_camera_ortho(800.0, 600.0);
+                    let sim = Simulation::new(renderer.device(), 4096).await;
 
-                let n_fluid = 4096;
-                let sim = Simulation::new(renderer.device(), n_fluid).await;
+                    let egui_ctx = egui::Context::default();
+                    let egui_state = EguiState::new(
+                        egui_ctx.clone(),
+                        egui::ViewportId::ROOT,
+                        &window_clone,
+                        Some(window_clone.scale_factor() as f32),
+                        None,
+                        Some(2048),
+                    );
+                    let egui_renderer = EguiRenderer::new(
+                        renderer.device(),
+                        wgpu::TextureFormat::Bgra8UnormSrgb,
+                        egui_wgpu::RendererOptions::default(),
+                    );
+                    let gui = Gui::new(egui_ctx, egui_state, egui_renderer);
 
-                let egui_ctx = egui::Context::default();
-                let egui_state = EguiState::new(
-                    egui_ctx.clone(),
-                    egui::ViewportId::ROOT,
-                    &window_clone,
-                    Some(window_clone.scale_factor() as f32),
-                    None,
-                    Some(2048),
-                );
+                    (renderer, sim, gui)
+                });
+                self.renderer = Some(renderer);
+                self.sim = Some(sim);
+                self.gui = Some(gui);
+            }
 
-                let egui_renderer = EguiRenderer::new(
-                    renderer.device(),
-                    wgpu::TextureFormat::Bgra8UnormSrgb,
-                    egui_wgpu::RendererOptions::default(),
-                );
+            // WASM: Async Init using spawn_local
+            #[cfg(target_arch = "wasm32")]
+            {
+                wasm_bindgen_futures::spawn_local(async move {
+                    let mut renderer = Renderer::new(window_clone.clone()).await;
+                    renderer.update_camera_ortho(800.0, 600.0);
+                    let sim = Simulation::new(renderer.device(), 4096).await;
 
-                let gui = Gui::new(egui_ctx, egui_state, egui_renderer);
+                    let egui_ctx = egui::Context::default();
+                    let egui_state = EguiState::new(
+                        egui_ctx.clone(),
+                        egui::ViewportId::ROOT,
+                        &window_clone,
+                        Some(window_clone.scale_factor() as f32),
+                        None,
+                        Some(2048),
+                    );
+                    let egui_renderer = EguiRenderer::new(
+                        renderer.device(),
+                        wgpu::TextureFormat::Bgra8UnormSrgb,
+                        egui_wgpu::RendererOptions::default(),
+                    );
+                    let gui = Gui::new(egui_ctx, egui_state, egui_renderer);
 
-                (renderer, sim, gui)
-            });
+                    proxy
+                        .send_event(AsyncInitData { renderer, sim, gui })
+                        .expect("Failed to send init event");
+                });
+            }
+        }
+    }
 
-            let (renderer, sim, gui) = pollster::block_on(async {
-                let mut renderer = Renderer::new(window.clone()).await;
-                renderer.update_camera_ortho(800.0, 600.0);
-                let sim = Simulation::new(renderer.device(), 4096).await;
-
-                let egui_ctx = egui::Context::default();
-                let egui_state = EguiState::new(
-                    egui_ctx.clone(),
-                    egui::ViewportId::ROOT,
-                    &window,
-                    Some(window.scale_factor() as f32),
-                    None,
-                    Some(2048),
-                );
-                let egui_renderer = EguiRenderer::new(
-                    renderer.device(),
-                    wgpu::TextureFormat::Bgra8UnormSrgb,
-                    egui_wgpu::RendererOptions::default(),
-                );
-                let gui = Gui::new(egui_ctx, egui_state, egui_renderer);
-
-                (renderer, sim, gui)
-            });
-
-            self.renderer = Some(renderer);
-            self.sim = Some(sim);
-            self.gui = Some(gui);
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AsyncInitData) {
+        self.renderer = Some(event.renderer);
+        self.sim = Some(event.sim);
+        self.gui = Some(event.gui);
+        if let Some(window) = self.window.as_ref() {
+            window.request_redraw();
         }
     }
 
@@ -293,9 +338,12 @@ impl ApplicationHandler for App {
 }
 
 pub fn run() {
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::<AsyncInitData>::with_user_event()
+        .build()
+        .unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = App::new();
+    let proxy = event_loop.create_proxy();
+    let mut app = App::new(proxy);
     let _ = event_loop.run_app(&mut app);
 }
