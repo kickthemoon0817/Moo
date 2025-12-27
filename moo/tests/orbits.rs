@@ -31,9 +31,14 @@ fn test_circular_orbit_stability() {
     let v_vec = DVec3::new(0.0, v_rel_mag, 0.0); // Perpendicular velocity
 
     // Body 1 (Heavy)
-    state.set_particle_mass(0, m1);
+    state.mass[0] = m1;
+    state.mass[1] = m1;
+    state.mass[2] = m1;
+    
     // Body 2 (Light)
-    state.set_particle_mass(1, m2);
+    state.mass[3] = m2;
+    state.mass[4] = m2;
+    state.mass[5] = m2;
 
     // Set Positions (Relative)
     // Let's keep Body 1 at origin for simplicity (approximate if m1 >> m2)

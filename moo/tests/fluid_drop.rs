@@ -15,8 +15,9 @@ fn test_sph_pressure_repulsion() {
     state.q[3] = 0.5; state.q[4] = 0.0; state.q[5] = 0.0;
     
     // Mass 1.0
-    state.set_particle_mass(0, 1.0);
-    state.set_particle_mass(1, 1.0);
+    // Mass 1.0
+    state.mass[0] = 1.0; state.mass[1] = 1.0; state.mass[2] = 1.0;
+    state.mass[3] = 1.0; state.mass[4] = 1.0; state.mass[5] = 1.0;
 
     // 2. Define SPH Law
     let h = 1.0;

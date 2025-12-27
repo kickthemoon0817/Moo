@@ -51,12 +51,12 @@ impl Law for Gravity {
                 let dy = q[idx_i+1] - q[idx_j+1];
                 let dz = q[idx_i+2] - q[idx_j+2]; 
 
-                let dist_sq = dx * dx + dy * dy + dz * dz + softening_sq;
+                let mut dist_sq = dx * dx + dy * dy + dz * dz + softening_sq;
                 let dist_val = dist_sq.val.sqrt();
                 if dist_val == 0.0 {
-                    continue;
+                    dist_sq = dx * dx + dy * dy + dz * dz + Dual::constant(1e-4); 
                 }
-                let dist = Dual::new(dist_val, 0.5 * dist_sq.der / dist_val);
+                let dist = Dual::new(dist_sq.val.sqrt(), 0.5 * dist_sq.der / dist_sq.val.sqrt()); 
 
                 // V = -G * m1 * m2 / r
                 let m1m2 = mass[i * mass_stride] * mass[j * mass_stride];

@@ -3,6 +3,7 @@ use winit::{
     event_loop::EventLoop,
     window::WindowBuilder,
 };
+use std::sync::Arc;
 use crate::investigation::viz::renderer::{ScientificRenderer, LineVertex, UiVertex};
 use crate::core::state::PhaseSpace;
 use crate::core::solve::{Integrator, VelocityVerlet};
@@ -11,17 +12,15 @@ use crate::laws::registry::LawRegistry;
 use crate::laws::classical::Gravity;
 use crate::investigation::probe::{Probe, EnergyProbe};
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
-    let window = Arc::new(
-        WindowBuilder::new()
+    let window = WindowBuilder::new()
         .with_title("PhysicLaw Scientific Visualization")
         .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
         .build(&event_loop)
-        .unwrap(),
-    );
+        .unwrap();
+    let window = Arc::new(window);
 
     let mut renderer = ScientificRenderer::new(window.clone()).await;
 
@@ -134,8 +133,7 @@ pub async fn run() {
 
                     // 2. Draw Axes for Rigid Bodies
                     let axis_len = 30.0;
-                    let rb_count = state.rot.len().min(state.dof / 3);
-                    for i in 0..rb_count {
+                    for i in 0..state.rot.len() {
                         let idx = i * 3;
                         let cx = state.q[idx];
                         let cy = state.q[idx+1];

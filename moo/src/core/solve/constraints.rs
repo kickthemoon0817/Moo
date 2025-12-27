@@ -72,8 +72,6 @@ const DEFAULT_MIN_SEPARATION: f64 = 1e-6;
 impl Constraint for SphereConstraint {
     fn project(&self, state: &mut PhaseSpace) {
         let n = state.dof / 3;
-        let min_sep = self.min_separation.max(DEFAULT_MIN_SEPARATION);
-        let min_sep_sq = min_sep * min_sep;
         for i in 0..n {
             for j in (i + 1)..n {
                 let idx_i = i * 3;
@@ -91,17 +89,14 @@ impl Constraint for SphereConstraint {
                     let v2 = glam::DVec3::from_slice(&state.v[idx_j..idx_j+3]);
                     let rel_vel = v1 - v2;
 
-                    let (normal, dist) = if dist_sq < min_sep_sq {
-                        // Fallback normal to avoid NaNs when particles fully overlap.
-                        let mut fallback = rel_vel.normalize_or_zero();
-                        if fallback.length_squared() == 0.0 {
-                            fallback = glam::DVec3::X;
-                        }
-                        (fallback, min_sep)
-                    } else {
-                        let dist = dist_sq.sqrt();
-                        (diff / dist, dist)
-                    };
+                    let mut dist = dist_sq.sqrt();
+                    let mut normal = diff / dist;
+                    
+                    // Handle exact overlap singularity
+                    if dist < 1e-6 {
+                        dist = 1e-6;
+                        normal = glam::DVec3::X; 
+                    }
 
                     let overlap = r_sum - dist;
                     if overlap <= 0.0 {
