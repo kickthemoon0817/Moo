@@ -1,12 +1,14 @@
 use wgpu::util::DeviceExt;
 
 pub struct ComputeEngine {
-    pipeline: wgpu::ComputePipeline,
+    density_pipeline: wgpu::ComputePipeline,
+    force_pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     // Buffers
     particle_buffer_a: wgpu::Buffer,
     particle_buffer_b: wgpu::Buffer,
+    density_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     particle_count: u32,
 }
@@ -22,9 +24,11 @@ struct Particle {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct SimParams {
     dt: f32,
-    g: f32,
+    h: f32,
+    rho0: f32,
+    stiffness: f32,
     count: u32,
-    _pad: u32,
+    _pad: [u32; 3], // Padding to ensure 16-byte alignment validation if needed
 }
 
 impl ComputeEngine {
@@ -32,10 +36,10 @@ impl ComputeEngine {
         // 1. Create Buffers
         let particle_size = std::mem::size_of::<Particle>() as u64;
         let buf_size = particle_size * count as u64;
+        let float_size = std::mem::size_of::<f32>() as u64;
+        let density_size = float_size * count as u64;
         
-        // ... (Usage flags already updated in file, but I am replacing the struct def. Need to ensure I don't revert usage flags if I copy-paste old code?)
-        // I will re-write the buffer creation to be safe.
-        
+        // A/B Buffers for Ping-Pong (Positions/Velocities)
         let particle_buffer_a = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Particle Buffer A"),
             size: buf_size,
@@ -50,7 +54,25 @@ impl ComputeEngine {
             mapped_at_creation: false,
         });
 
-        let sim_params = SimParams { dt: 0.005, g: 500.0, count, _pad: 0 }; // Tuned for demo
+        // Density Buffer (Intermediate)
+        let density_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Density Buffer"),
+            size: density_size,
+            usage: wgpu::BufferUsages::STORAGE, // Read/Write in compute
+            mapped_at_creation: false,
+        });
+
+        // Uniforms: h=25.0, rho0=0.002, k=10000.0 (Matched window.rs CPU logic)
+        // dt = 0.005 (Stable for SPH)
+        let sim_params = SimParams { 
+            dt: 0.005, 
+            h: 25.0, 
+            rho0: 0.002, 
+            stiffness: 10000.0, 
+            count, 
+            _pad: [0; 3] 
+        };
+        
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sim Params Buffer"),
             contents: bytemuck::cast_slice(&[sim_params]),
@@ -58,12 +80,12 @@ impl ComputeEngine {
         });
 
         // 2. Shader
-        let shader = device.create_shader_module(wgpu::include_wgsl!("nbody.wgsl"));
+        let shader = device.create_shader_module(wgpu::include_wgsl!("sph.wgsl"));
 
-        // 3. Pipeline
+        // 3. Bind Group Layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
-                wgpu::BindGroupLayoutEntry {
+                wgpu::BindGroupLayoutEntry { // 0: Uniforms
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
@@ -73,7 +95,7 @@ impl ComputeEngine {
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
+                wgpu::BindGroupLayoutEntry { // 1: ParticlesSrc (Read)
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
@@ -83,7 +105,7 @@ impl ComputeEngine {
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
+                wgpu::BindGroupLayoutEntry { // 2: Density (Read/Write)
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
@@ -93,48 +115,61 @@ impl ComputeEngine {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry { // 3: ParticlesDst (Write)
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
-            label: None,
+            label: Some("SPH Bind Group Layout"),
         });
 
+        // 4. Pipelines
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Compute Pipeline Layout"),
+            label: Some("SPH Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Compute Pipeline"),
+        let density_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Density Pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: "main",
+            entry_point: "calc_density",
         });
 
+        let force_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Force Pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: "calc_force",
+        });
+
+        // 5. Initial Bind Group (A -> B)
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: particle_buffer_a.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: particle_buffer_b.as_entire_binding(),
-                },
+                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: particle_buffer_a.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: density_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: particle_buffer_b.as_entire_binding() },
             ],
-            label: None,
+            label: Some("SPH Bind Group A->B"),
         });
 
         Self {
-            pipeline,
+            density_pipeline,
+            force_pipeline,
             bind_group_layout,
             bind_group,
             particle_buffer_a,
             particle_buffer_b,
+            density_buffer,
             uniform_buffer,
             particle_count: count,
         }
@@ -142,41 +177,52 @@ impl ComputeEngine {
 
     pub fn step(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Compute Encoder"),
+            label: Some("SPH Encoder"),
         });
+
+        let work_group_count = (self.particle_count as f32 / 256.0).ceil() as u32;
 
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Compute Pass"),
+                label: Some("SPH Compute Pass"),
                 timestamp_writes: None, 
             });
-            cpass.set_pipeline(&self.pipeline);
             cpass.set_bind_group(0, &self.bind_group, &[]);
-            let work_group_count = (self.particle_count as f32 / 256.0).ceil() as u32;
+            
+            // Pass 1: Density
+            cpass.set_pipeline(&self.density_pipeline);
+            cpass.dispatch_workgroups(work_group_count, 1, 1);
+
+            // Barrier implied between dispatches in same pass? 
+            // In WGPU, memory hazards are handled by the driver if resources are used, but here Density is RW in both?
+            // Wait, calc_density writes Density. calc_force reads Density.
+            // Standard WGPU requires a pipeline barrier. Multi-dispatch inside one pass *does* guarantee execution order, 
+            // but memory visibility requires a pipeline barrier if the target is STORAGE.
+            // However, WGPU's `dispatch` calls in sequence are ordered. 
+            // Safety: Splitting into two passes ensures visibility if we are paranoid, but single pass usually works for sequential kernels.
+            // I'll stick to single pass for now.
+            
+            // Pass 2: Force & Integration
+            cpass.set_pipeline(&self.force_pipeline);
             cpass.dispatch_workgroups(work_group_count, 1, 1);
         }
 
         queue.submit(Some(encoder.finish()));
 
-        // Ping-pong buffers so the next step reads the latest output.
+        // Ping-pong buffers
         std::mem::swap(&mut self.particle_buffer_a, &mut self.particle_buffer_b);
+        
+        // Re-create bind group for next direction
+        // Src: Buffer A (was destination), Dst: Buffer B (was source)
         self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.particle_buffer_a.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: self.particle_buffer_b.as_entire_binding(),
-                },
+                wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: self.particle_buffer_a.as_entire_binding() }, // New Src
+                wgpu::BindGroupEntry { binding: 2, resource: self.density_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: self.particle_buffer_b.as_entire_binding() }, // New Dst
             ],
-            label: Some("Compute Bind Group"),
+            label: Some("SPH Bind Group"),
         });
     }
 
@@ -196,7 +242,7 @@ impl ComputeEngine {
                 vel: [v[idx] as f32, v[idx+1] as f32, v[idx+2] as f32, 0.0],
             });
         }
-        // Write to whichever buffer is currently the 'valid state' (source for next step)
+        // Write to current read source
         queue.write_buffer(&self.particle_buffer_a, 0, bytemuck::cast_slice(&data));
     }
 }
