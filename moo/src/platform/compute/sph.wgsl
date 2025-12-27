@@ -23,8 +23,8 @@ struct GridPair {
 @group(0) @binding(1) var<storage, read> particlesSrc: array<Particle>;
 @group(0) @binding(2) var<storage, read_write> density: array<f32>;
 @group(0) @binding(3) var<storage, read_write> particlesDst: array<Particle>;
-@group(0) @binding(4) var<storage, read> grid_pairs: array<GridPair>;
-@group(0) @binding(5) var<storage, read> cell_offsets: array<u32>;
+@group(0) @binding(4) var<storage, read_write> grid_pairs: array<GridPair>;
+@group(0) @binding(5) var<storage, read_write> cell_offsets: array<u32>;
 
 const PI: f32 = 3.1415926535;
 
