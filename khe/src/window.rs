@@ -1,4 +1,4 @@
-#![allow(deprecated)]
+
 use crate::renderer::Renderer;
 use moo::simulation::Simulation; 
 use std::sync::Arc;

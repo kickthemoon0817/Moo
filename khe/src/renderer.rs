@@ -50,7 +50,7 @@ pub struct Renderer {
     ui_count: u32,
 }
 
-#[allow(dead_code)]
+
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
@@ -279,14 +279,7 @@ impl Renderer {
 
 
 
-    // Update UI Lines (e.g. graph)
-    pub fn update_ui_lines(&mut self, lines: &[UiVertex]) {
-        self.ui_count = lines.len() as u32;
-        if self.ui_count > 0 {
-            self.queue
-                .write_buffer(&self.ui_buffer, 0, bytemuck::cast_slice(lines));
-        }
-    }
+
 
     pub fn device(&self) -> &wgpu::Device {
         &self.device
