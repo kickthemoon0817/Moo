@@ -3,7 +3,10 @@ struct SimParams {
     h: f32,       // Smoothing length
     rho0: f32,    // Rest density
     stiffness: f32, // Tait stiffness (B)
+    viscosity: f32,
     count: u32,
+    grid_dim: u32,
+    _pad: u32,
 }
 
 struct Particle {
@@ -11,10 +14,17 @@ struct Particle {
     vel: vec4<f32>, // xyz
 }
 
+struct GridPair {
+    cell_id: u32,
+    particle_id: u32,
+}
+
 @group(0) @binding(0) var<uniform> params: SimParams;
 @group(0) @binding(1) var<storage, read> particlesSrc: array<Particle>;
 @group(0) @binding(2) var<storage, read_write> density: array<f32>;
 @group(0) @binding(3) var<storage, read_write> particlesDst: array<Particle>;
+@group(0) @binding(4) var<storage, read> grid_pairs: array<GridPair>;
+@group(0) @binding(5) var<storage, read> cell_offsets: array<u32>;
 
 const PI: f32 = 3.1415926535;
 
@@ -42,14 +52,59 @@ fn calc_density(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let pi = particlesSrc[i];
     let h = params.h;
     var rho = 0.0;
-
-    for (var j = 0u; j < params.count; j++) {
-        let pj = particlesSrc[j];
-        let diff = pi.pos.xyz - pj.pos.xyz;
-        let r2 = dot(diff, diff);
+    
+    // Grid Search
+    // Iterate 3x3x3 cells around current position
+    let center_cell = vec3<i32>(floor(pi.pos.xyz / h));
+    
+    for (var z = -1; z <= 1; z++) {
+    for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) {
+        // Re-hash neighbor cell
+        let off = 1000.0;
+        let cx = center_cell.x + x;
+        let cy = center_cell.y + y;
+        let cz = center_cell.z + z;
         
-        // Mass = pj.pos.w (stored in w component)
-        rho += pj.pos.w * poly6(r2, h);
+        // Hash
+        let p1 = 73856093u;
+        let p2 = 19349663u;
+        let p3 = 83492791u;
+        let n = params.grid_dim;
+        
+        let xi = u32(i32(cx + i32(off/h)));
+        let yi = u32(i32(cy + i32(off/h)));
+        let zi = u32(i32(cz + i32(off/h)));
+        let cell_index = ((xi * p1) ^ (yi * p2) ^ (zi * p3)) % n;
+        
+        // Read Offsets
+        let start_idx = cell_offsets[cell_index];
+        
+        if (start_idx != 0xFFFFFFFFu) {
+            // Iterate particles in this cell
+            var k = start_idx;
+            loop {
+                if (k >= params.count) { break; }
+                let pair = grid_pairs[k];
+                if (pair.cell_id != cell_index) { break; }
+                
+                let j = pair.particle_id;
+                
+                // --- Interaction p_i, p_j ---
+                let pj = particlesSrc[j];
+                let diff = pi.pos.xyz - pj.pos.xyz;
+                let r2 = dot(diff, diff);
+                
+                if (r2 < h*h) {
+                     rho += pj.pos.w * poly6(r2, h);
+                }
+                // ----------------------------
+                
+                k++;
+            }
+        }
+    }
+    }
     }
 
     density[i] = rho;
@@ -65,49 +120,74 @@ fn calc_force(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let h = params.h;
     
     // Tait EOS: P = B * ((rho / rho0)^7 - 1)
-    // Avoid negative pressure (clamping)
     let p_i = params.stiffness * (pow(max(rho_i / params.rho0, 1.0), 7.0) - 1.0);
 
     var force_press = vec3<f32>(0.0);
-    var force_visc = vec3<f32>(0.0); // Placeholder for phase 8
+    var force_visc = vec3<f32>(0.0);
 
-    for (var j = 0u; j < params.count; j++) {
-        if (i == j) { continue; }
+    let center_cell = vec3<i32>(floor(pi.pos.xyz / h));
+    
+    for (var z = -1; z <= 1; z++) {
+    for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) {
+        let off = 1000.0;
+        let cx = center_cell.x + x;
+        let cy = center_cell.y + y;
+        let cz = center_cell.z + z;
         
-        let pj = particlesSrc[j];
-        let diff = pi.pos.xyz - pj.pos.xyz;
-        let r = length(diff);
+        let p1 = 73856093u;
+        let p2 = 19349663u;
+        let p3 = 83492791u;
+        let n = params.grid_dim;
         
-        if (r < h) {
-            let rho_j = density[j];
-            let p_j = params.stiffness * (pow(max(rho_j / params.rho0, 1.0), 7.0) - 1.0);
-            
-            // Symmetric pressure force
-            // F_i = - sum m_j * (Pi/rho_i^2 + Pj/rho_j^2) * gradW
-            // Simplification: Standard SPH form
-            let term = (p_i / (rho_i * rho_i)) + (p_j / (rho_j * rho_j));
-            force_press -= pj.pos.w * term * spiky_grad(diff, r, h);
+        let xi = u32(i32(cx + i32(off/h)));
+        let yi = u32(i32(cy + i32(off/h)));
+        let zi = u32(i32(cz + i32(off/h)));
+        let cell_index = ((xi * p1) ^ (yi * p2) ^ (zi * p3)) % n;
+        
+        let start_idx = cell_offsets[cell_index];
+        
+        if (start_idx != 0xFFFFFFFFu) {
+            var k = start_idx;
+            loop {
+                if (k >= params.count) { break; }
+                let pair = grid_pairs[k];
+                if (pair.cell_id != cell_index) { break; }
+                
+                let j = pair.particle_id;
+                if (i == j) { k++; continue; } 
+                
+                // --- Interaction p_i, p_j ---
+                let pj = particlesSrc[j];
+                let diff = pi.pos.xyz - pj.pos.xyz;
+                let r = length(diff);
+                
+                if (r < h) {
+                    let rho_j = density[j];
+                    let p_j = params.stiffness * (pow(max(rho_j / params.rho0, 1.0), 7.0) - 1.0);
+                    
+                    let term_p = (p_i / (rho_i * rho_i)) + (p_j / (rho_j * rho_j));
+                    force_press -= pj.pos.w * term_p * spiky_grad(diff, r, h);
+
+                    let term_v = (h - r);
+                    let laplacian = (45.0 / (PI * pow(h, 6.0))) * term_v;
+                    
+                    let vel_diff = pj.vel.xyz - pi.vel.xyz;
+                    force_visc += (params.viscosity / rho_j) * pj.pos.w * vel_diff * laplacian;
+                }
+                // ----------------------------
+                
+                k++;
+            }
         }
     }
+    }
+    }
 
-    // Gravity
-    let g = vec3<f32>(0.0, -500.0, 0.0); // Strong gravity for demo
-    let mass_i = pi.pos.w;
-    var total_force = force_press * mass_i + g * mass_i; 
-    // F_pressure is actually force density in some derivations, but Spiky returns Force directly if careful. 
-    // Wait, m * (P/rho^2) * gradW ==> Units: kg * (Pa / (kg/m^3)^2) * (1/m) = kg * (N/m^2 / kg^2/m^6) * 1/m = kg * N * m^4 / kg^2 * 1/m = N * m^3 / kg.
-    // If we multiply by mass, we get Force? 
-    // Standard Monaghan: dv/dt = - sum m (P/rho^2 + ...) gradW. 
-    // So Force = mass * dv/dt. 
-    // My spiky_grad returns gradient of W. 
-    // term units: Pa / (kg/m^3)^2 = N/m^2 / (kg^2/m^6) = N m^4 / kg^2.
-    // m_j units: kg.
-    // term * m_j = N m^4 / kg.
-    // spiky_grad units: 1/m^4.
-    // Result: N / kg = Acceleration.
-    // So force_press accumulation above (without mass_i multiplication) is ACCELERATION.
+    let g = vec3<f32>(0.0, -500.0, 0.0);
     
-    let accel = force_press + g; // Pressure term provides acceleration directly.
+    let mass_i = pi.pos.w;
+    let accel = force_press + (force_visc / mass_i) + g; 
     
     // Symplectic Euler
     let vel = pi.vel.xyz + accel * params.dt;
