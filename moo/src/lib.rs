@@ -1,7 +1,3 @@
-// pub mod engine;
-// pub mod games;
-// pub mod ui;
-
 // New PhysicLaw Architecture
 pub mod core {
     pub mod geometry;
@@ -20,5 +16,6 @@ pub mod platform;
 
 pub mod investigation {
     pub mod probe;
-    pub mod viz;
 }
+
+pub mod simulation;

@@ -45,7 +45,10 @@ struct SimParams {
     viscosity: f32,
     count: u32,
     grid_dim: u32,
-    _pad: u32,
+    _pad0: u32, // Padding for vec2 alignment (8 bytes)
+    mouse_pos: [f32; 2],
+    mouse_pressed: u32, // 0 or 1
+    _pad1: u32,
 }
 
 // ... helper for sort params
@@ -121,7 +124,10 @@ impl ComputeEngine {
             viscosity: 200.0,
             count,
             grid_dim,
-            _pad: 0,
+            _pad0: 0,
+            mouse_pos: [0.0, 0.0],
+            mouse_pressed: 0,
+            _pad1: 0,
         };
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -554,5 +560,32 @@ impl ComputeEngine {
         }
         // Write to current read source
         queue.write_buffer(&self.particle_buffer_a, 0, bytemuck::cast_slice(&data));
+    }
+
+    pub fn write_params(
+        &self,
+        queue: &wgpu::Queue,
+        dt: f32,
+        h: f32,
+        rho0: f32,
+        stiffness: f32,
+        viscosity: f32,
+        mouse_pos: [f32; 2],
+        mouse_pressed: bool,
+    ) {
+        let params = SimParams {
+            dt,
+            h,
+            rho0,
+            stiffness,
+            viscosity,
+            count: self.particle_count,
+            grid_dim: self.grid_dim,
+            _pad0: 0,
+            mouse_pos,
+            mouse_pressed: if mouse_pressed { 1 } else { 0 },
+            _pad1: 0,
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[params]));
     }
 }

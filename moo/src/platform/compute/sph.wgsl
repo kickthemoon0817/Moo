@@ -6,6 +6,8 @@ struct SimParams {
     viscosity: f32,
     count: u32,
     grid_dim: u32,
+    mouse_pos: vec2<f32>,
+    mouse_pressed: u32,
     _pad: u32,
 }
 
@@ -184,10 +186,30 @@ fn calc_force(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
     }
 
+    // --- Mouse Interaction ---
+    var mouse_force = vec3<f32>(0.0);
+    if (params.mouse_pressed != 0u) {
+        let interaction_radius = 50.0;
+        let spring_k = 2000.0; // Strong pull
+        
+        let delta = params.mouse_pos - pi.pos.xy;
+        let dist = length(delta);
+        
+        if (dist < interaction_radius && dist > 1.0) {
+             let dir = delta / dist;
+             // Spring force: F = k * x
+             // Pull towards mouse
+             mouse_force += vec3<f32>(dir * spring_k * (dist / interaction_radius), 0.0);
+             
+             // Damping
+             mouse_force -= pi.vel.xyz * 2.0; 
+        }
+    }
+
     let g = vec3<f32>(0.0, -500.0, 0.0);
     
     let mass_i = pi.pos.w;
-    let accel = force_press + (force_visc / mass_i) + g; 
+    let accel = force_press + (force_visc / mass_i) + g + (mouse_force / mass_i); 
     
     // Symplectic Euler
     let vel = pi.vel.xyz + accel * params.dt;
