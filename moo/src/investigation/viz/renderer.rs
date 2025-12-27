@@ -450,4 +450,79 @@ impl ScientificRenderer {
              self.queue.write_buffer(&self.ui_buffer, 0, bytemuck::cast_slice(lines));
         }
     }
+
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    pub fn render_compute(&mut self, instance_buffer: &wgpu::Buffer, count: u32) -> Result<(), wgpu::SurfaceError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder (Compute)"),
+        });
+
+         let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("view_bind_group_layout"),
+        });
+        
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.view_buffer.as_entire_binding(),
+            }],
+            label: Some("view_bind_group"),
+        });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.05, g: 0.05, b: 0.08, a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
+            render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_bind_group(0, &bind_group, &[]);
+            render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
+            render_pass.draw(0..4, 0..count);
+            
+             if self.ui_count > 0 {
+                render_pass.set_pipeline(&self.ui_pipeline);
+                render_pass.set_vertex_buffer(0, self.ui_buffer.slice(..));
+                render_pass.draw(0..self.ui_count, 0..1);
+            }
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        Ok(())
+    }
 }

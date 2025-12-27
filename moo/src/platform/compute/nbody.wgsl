@@ -40,8 +40,16 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Symplectic Euler
     let accel = force / p.pos.w;
     let vel = p.vel.xyz + accel * params.dt;
-    let pos = p.pos.xyz + vel * params.dt;
+    var pos = p.pos.xyz + vel * params.dt;
+
+    // Floor Constraint (Simple)
+    if (pos.y < -200.0) {
+        pos.y = -200.0;
+        // Simple reflection with damping
+        particlesDst[index].vel = vec4<f32>(vel.x * 0.9, -vel.y * 0.5, vel.z * 0.9, 0.0);
+    } else {
+        particlesDst[index].vel = vec4<f32>(vel, 0.0);
+    }
 
     particlesDst[index].pos = vec4<f32>(pos, p.pos.w);
-    particlesDst[index].vel = vec4<f32>(vel, 0.0);
 }

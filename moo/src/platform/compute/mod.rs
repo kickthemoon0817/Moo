@@ -1,8 +1,6 @@
 use wgpu::util::DeviceExt;
 
 pub struct ComputeEngine {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
     pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
@@ -30,26 +28,29 @@ struct SimParams {
 }
 
 impl ComputeEngine {
-    pub async fn new(device: wgpu::Device, queue: wgpu::Queue, count: u32) -> Self {
+    pub async fn new(device: &wgpu::Device, count: u32) -> Self {
         // 1. Create Buffers
         let particle_size = std::mem::size_of::<Particle>() as u64;
         let buf_size = particle_size * count as u64;
         
+        // ... (Usage flags already updated in file, but I am replacing the struct def. Need to ensure I don't revert usage flags if I copy-paste old code?)
+        // I will re-write the buffer creation to be safe.
+        
         let particle_buffer_a = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Particle Buffer A"),
             size: buf_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::VERTEX,
             mapped_at_creation: false,
         });
 
         let particle_buffer_b = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Particle Buffer B"),
             size: buf_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::VERTEX,
             mapped_at_creation: false,
         });
 
-        let sim_params = SimParams { dt: 0.016, g: 1.0, count, _pad: 0 };
+        let sim_params = SimParams { dt: 0.005, g: 500.0, count, _pad: 0 }; // Tuned for demo
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sim Params Buffer"),
             contents: bytemuck::cast_slice(&[sim_params]),
@@ -129,8 +130,6 @@ impl ComputeEngine {
         });
 
         Self {
-            device,
-            queue,
             pipeline,
             bind_group_layout,
             bind_group,
@@ -141,8 +140,8 @@ impl ComputeEngine {
         }
     }
 
-    pub fn step(&mut self) {
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+    pub fn step(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Compute Encoder"),
         });
 
@@ -157,11 +156,11 @@ impl ComputeEngine {
             cpass.dispatch_workgroups(work_group_count, 1, 1);
         }
 
-        self.queue.submit(Some(encoder.finish()));
+        queue.submit(Some(encoder.finish()));
 
         // Ping-pong buffers so the next step reads the latest output.
         std::mem::swap(&mut self.particle_buffer_a, &mut self.particle_buffer_b);
-        self.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -179,5 +178,25 @@ impl ComputeEngine {
             ],
             label: Some("Compute Bind Group"),
         });
+    }
+
+    pub fn current_buffer(&self) -> &wgpu::Buffer {
+        &self.particle_buffer_a
+    }
+
+    pub fn write_state(&self, queue: &wgpu::Queue, q: &[f64], v: &[f64], mass: &[f64]) {
+        let count = self.particle_count as usize;
+        let mut data = Vec::with_capacity(count);
+        for i in 0..count {
+            let idx = i * 3;
+            let m_stride = if mass.len() == q.len() { 3 } else { 1 };
+            
+            data.push(Particle {
+                pos: [q[idx] as f32, q[idx+1] as f32, q[idx+2] as f32, mass[i*m_stride] as f32],
+                vel: [v[idx] as f32, v[idx+1] as f32, v[idx+2] as f32, 0.0],
+            });
+        }
+        // Write to whichever buffer is currently the 'valid state' (source for next step)
+        queue.write_buffer(&self.particle_buffer_a, 0, bytemuck::cast_slice(&data));
     }
 }
