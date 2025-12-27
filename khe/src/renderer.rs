@@ -40,22 +40,32 @@ pub struct Renderer {
     pub size: winit::dpi::PhysicalSize<u32>,
 
     // particles
+    #[allow(dead_code)]
     pipeline: wgpu::RenderPipeline,
     view_buffer: wgpu::Buffer,
+    #[allow(dead_code)]
     instance_buffer: wgpu::Buffer,
+    #[allow(dead_code)]
     instance_count: u32,
 
     // lines
+    #[allow(dead_code)]
     line_pipeline: wgpu::RenderPipeline,
+    #[allow(dead_code)]
     line_buffer: wgpu::Buffer,
+    #[allow(dead_code)]
     line_count: u32,
 
     // ui
+    #[allow(dead_code)]
     ui_pipeline: wgpu::RenderPipeline,
+    #[allow(dead_code)]
     ui_buffer: wgpu::Buffer,
+    #[allow(dead_code)]
     ui_count: u32,
 }
 
+#[allow(dead_code)]
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();

@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use crate::renderer::{LineVertex, Renderer};
 use moo::simulation::Simulation; 
 use std::sync::Arc;
@@ -57,7 +58,7 @@ pub async fn run() {
     
     // --- GUI Setup ---
     let egui_ctx = egui::Context::default();
-    let mut egui_state = EguiState::new(
+    let egui_state = EguiState::new(
         egui_ctx.clone(),
         egui::ViewportId::ROOT,
         &window, 
