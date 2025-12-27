@@ -184,25 +184,20 @@ impl ComputeEngine {
 
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("SPH Compute Pass"),
+                label: Some("SPH Density Pass"),
                 timestamp_writes: None, 
             });
             cpass.set_bind_group(0, &self.bind_group, &[]);
-            
-            // Pass 1: Density
             cpass.set_pipeline(&self.density_pipeline);
             cpass.dispatch_workgroups(work_group_count, 1, 1);
+        } // End Pass -> Barrier
 
-            // Barrier implied between dispatches in same pass? 
-            // In WGPU, memory hazards are handled by the driver if resources are used, but here Density is RW in both?
-            // Wait, calc_density writes Density. calc_force reads Density.
-            // Standard WGPU requires a pipeline barrier. Multi-dispatch inside one pass *does* guarantee execution order, 
-            // but memory visibility requires a pipeline barrier if the target is STORAGE.
-            // However, WGPU's `dispatch` calls in sequence are ordered. 
-            // Safety: Splitting into two passes ensures visibility if we are paranoid, but single pass usually works for sequential kernels.
-            // I'll stick to single pass for now.
-            
-            // Pass 2: Force & Integration
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("SPH Force Pass"),
+                timestamp_writes: None, 
+            });
+            cpass.set_bind_group(0, &self.bind_group, &[]);
             cpass.set_pipeline(&self.force_pipeline);
             cpass.dispatch_workgroups(work_group_count, 1, 1);
         }
