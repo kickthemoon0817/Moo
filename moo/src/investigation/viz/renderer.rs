@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use winit::window::Window;
-use wgpu::util::DeviceExt;
 use glam::Mat4;
+use std::sync::Arc;
+use wgpu::util::DeviceExt;
+use winit::window::Window;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -38,7 +38,7 @@ pub struct ScientificRenderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
-    
+
     // particles
     pipeline: wgpu::RenderPipeline,
     view_buffer: wgpu::Buffer,
@@ -49,7 +49,7 @@ pub struct ScientificRenderer {
     line_pipeline: wgpu::RenderPipeline,
     line_buffer: wgpu::Buffer,
     line_count: u32,
-    
+
     // ui
     ui_pipeline: wgpu::RenderPipeline,
     ui_buffer: wgpu::Buffer,
@@ -66,20 +66,26 @@ impl ScientificRenderer {
 
         let surface = instance.create_surface(window).unwrap();
 
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        }).await.unwrap();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .unwrap();
 
-        let (device, queue) = adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-            },
-            None,
-        ).await.unwrap();
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
         let config = wgpu::SurfaceConfiguration {
@@ -107,13 +113,13 @@ impl ScientificRenderer {
         // 1. Particle Pipeline
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
-            size: 1024 * 64, 
+            size: 1024 * 64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/particles.wgsl"));
-        
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -188,13 +194,13 @@ impl ScientificRenderer {
         // 2. Line Pipeline
         let line_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Line Buffer"),
-            size: 1024 * 64, 
+            size: 1024 * 64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let line_shader = device.create_shader_module(wgpu::include_wgsl!("shaders/lines.wgsl"));
-        
+
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Line Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
@@ -211,12 +217,14 @@ impl ScientificRenderer {
                     array_stride: std::mem::size_of::<LineVertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
-                        wgpu::VertexAttribute { // Position
+                        wgpu::VertexAttribute {
+                            // Position
                             offset: 0,
                             shader_location: 0,
                             format: wgpu::VertexFormat::Float32x3,
                         },
-                        wgpu::VertexAttribute { // Color
+                        wgpu::VertexAttribute {
+                            // Color
                             offset: 12,
                             shader_location: 1,
                             format: wgpu::VertexFormat::Float32x3,
@@ -250,16 +258,16 @@ impl ScientificRenderer {
         // 3. UI Pipeline
         let ui_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("UI Buffer"),
-            size: 1024 * 64, 
+            size: 1024 * 64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let ui_shader = device.create_shader_module(wgpu::include_wgsl!("shaders/ui.wgsl"));
-        
+
         let ui_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("UI Pipeline Layout"),
-            bind_group_layouts: &[], 
+            bind_group_layouts: &[],
             push_constant_ranges: &[],
         });
 
@@ -273,12 +281,14 @@ impl ScientificRenderer {
                     array_stride: std::mem::size_of::<UiVertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
-                        wgpu::VertexAttribute { // Position vec2
+                        wgpu::VertexAttribute {
+                            // Position vec2
                             offset: 0,
                             shader_location: 0,
                             format: wgpu::VertexFormat::Float32x2,
                         },
-                        wgpu::VertexAttribute { // Color vec3
+                        wgpu::VertexAttribute {
+                            // Color vec3
                             offset: 8,
                             shader_location: 1,
                             format: wgpu::VertexFormat::Float32x3,
@@ -296,7 +306,7 @@ impl ScientificRenderer {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineStrip, 
+                topology: wgpu::PrimitiveTopology::LineStrip,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None,
@@ -324,7 +334,7 @@ impl ScientificRenderer {
             line_count: 0,
             ui_pipeline,
             ui_buffer,
-            ui_count: 0
+            ui_count: 0,
         }
     }
 
@@ -339,26 +349,32 @@ impl ScientificRenderer {
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
-         let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("view_bind_group_layout"),
-        });
-        
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: Some("view_bind_group_layout"),
+                });
+
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -376,7 +392,10 @@ impl ScientificRenderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.05, g: 0.05, b: 0.05, a: 1.0,
+                            r: 0.05,
+                            g: 0.05,
+                            b: 0.05,
+                            a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -391,7 +410,7 @@ impl ScientificRenderer {
             render_pass.set_bind_group(0, &bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
             render_pass.draw(0..4, 0..self.instance_count);
-            
+
             // 2. Draw Lines
             if self.line_count > 0 {
                 render_pass.set_pipeline(&self.line_pipeline);
@@ -413,41 +432,44 @@ impl ScientificRenderer {
 
         Ok(())
     }
-    
+
     // Updates instances from PhaseSpace (Coordinates)
     pub fn update_instances(&mut self, positions: &[f64], count: usize) {
-         let mut data = Vec::with_capacity(count);
-         for i in 0..count {
-             let idx = i * 3;
-             let x = positions[idx] as f32;
-             let y = positions[idx+1] as f32;
-             let z = positions[idx+2] as f32;
-             
-             data.push(InstanceInput {
-                 position: [x, y, z],
-                 radius: 15.0, 
-                 color: [0.8, 0.8, 0.9],
-                 padding: 0.0,
-             });
-         }
-         
-         self.instance_count = count as u32;
-         self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&data));
+        let mut data = Vec::with_capacity(count);
+        for i in 0..count {
+            let idx = i * 3;
+            let x = positions[idx] as f32;
+            let y = positions[idx + 1] as f32;
+            let z = positions[idx + 2] as f32;
+
+            data.push(InstanceInput {
+                position: [x, y, z],
+                radius: 15.0,
+                color: [0.8, 0.8, 0.9],
+                padding: 0.0,
+            });
+        }
+
+        self.instance_count = count as u32;
+        self.queue
+            .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&data));
     }
 
     // New: Update Lines (e.g. axes)
     pub fn update_lines(&mut self, lines: &[LineVertex]) {
         self.line_count = lines.len() as u32; // Number of vertices
         if self.line_count > 0 {
-             self.queue.write_buffer(&self.line_buffer, 0, bytemuck::cast_slice(lines));
+            self.queue
+                .write_buffer(&self.line_buffer, 0, bytemuck::cast_slice(lines));
         }
     }
 
     // Update UI Lines (e.g. graph)
     pub fn update_ui_lines(&mut self, lines: &[UiVertex]) {
-        self.ui_count = lines.len() as u32; 
+        self.ui_count = lines.len() as u32;
         if self.ui_count > 0 {
-             self.queue.write_buffer(&self.ui_buffer, 0, bytemuck::cast_slice(lines));
+            self.queue
+                .write_buffer(&self.ui_buffer, 0, bytemuck::cast_slice(lines));
         }
     }
 
@@ -459,28 +481,38 @@ impl ScientificRenderer {
         &self.queue
     }
 
-    pub fn render_compute(&mut self, instance_buffer: &wgpu::Buffer, count: u32) -> Result<(), wgpu::SurfaceError> {
+    pub fn render_compute(
+        &mut self,
+        instance_buffer: &wgpu::Buffer,
+        count: u32,
+    ) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder (Compute)"),
-        });
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
-         let bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("view_bind_group_layout"),
-        });
-        
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder (Compute)"),
+            });
+
+        let bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: Some("view_bind_group_layout"),
+                });
+
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -498,7 +530,10 @@ impl ScientificRenderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.05, g: 0.05, b: 0.08, a: 1.0,
+                            r: 0.05,
+                            g: 0.05,
+                            b: 0.08,
+                            a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -512,8 +547,8 @@ impl ScientificRenderer {
             render_pass.set_bind_group(0, &bind_group, &[]);
             render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
             render_pass.draw(0..4, 0..count);
-            
-             if self.ui_count > 0 {
+
+            if self.ui_count > 0 {
                 render_pass.set_pipeline(&self.ui_pipeline);
                 render_pass.set_vertex_buffer(0, self.ui_buffer.slice(..));
                 render_pass.draw(0..self.ui_count, 0..1);

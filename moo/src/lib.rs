@@ -4,20 +4,19 @@
 
 // New PhysicLaw Architecture
 pub mod core {
-    pub mod math;
     pub mod geometry;
-    pub mod state;
+    pub mod math;
     pub mod solve;
+    pub mod state;
 }
 
 pub mod laws {
-    pub mod registry;
     pub mod classical;
     pub mod continuum;
+    pub mod registry;
 }
 
 pub mod platform;
-
 
 pub mod investigation {
     pub mod probe;

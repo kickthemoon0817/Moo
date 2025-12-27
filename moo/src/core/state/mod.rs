@@ -1,11 +1,11 @@
 use crate::core::math::ad::Dual;
 
 /// Represents the State of the system in Phase Space (q, p).
-/// 
+///
 /// We use a Structure-of-Arrays (SoA) layout. Instead of having a `Vec<Particle>`
 /// where each particle has position and velocity, we have one giant `Vec<f64>` for positions
 /// and one for momenta.
-/// 
+///
 /// This is critical for cache coherence when the Integrator iterates over the state.
 #[derive(Debug, Clone, Default)]
 pub struct PhaseSpace {
@@ -22,7 +22,7 @@ pub struct PhaseSpace {
     /// Size: `dof`
     pub v: Vec<f64>,
 
-    /// Mass/Inertia diagonal (simplified). 
+    /// Mass/Inertia diagonal (simplified).
     /// Realistically this would be a Mass Matrix, but for SoA particles, a diagonal is often sufficient.
     pub mass: Vec<f64>,
 
@@ -37,10 +37,10 @@ pub struct PhaseSpace {
     /// For Prototype 2, let's assume we can have particles AND rigid bodies.
     /// But simplest is: A rigid body i has center of mass at q[3i..3i+3] and rotation at rot[i].
     pub rot: Vec<glam::DQuat>,
-    
+
     /// Angular Velocities (Body frame).
     pub ang_v: Vec<glam::DVec3>,
-    
+
     /// Inertia Tensor diagonals (Principal moments).
     pub inertia: Vec<glam::DVec3>,
 
@@ -80,7 +80,7 @@ impl PhaseSpace {
         self.mass[base + 1] = mass;
         self.mass[base + 2] = mass;
     }
-    
+
     /// Resize rigid body storage.
     pub fn resize_rigid(&mut self, count: usize) {
         self.rot.resize(count, glam::DQuat::IDENTITY);

@@ -10,7 +10,7 @@ use crate::core::math::ad::Dual;
 /// are guaranteed to be conservative gradients.
 pub trait Law {
     /// Computes the total potential energy of the system given the state configuration `q`.
-    /// 
+    ///
     /// # Arguments
     /// * `q` - The generalized coordinates in Dual number form (for AD).
     /// * `mass` - The mass constants of the degrees of freedom.
@@ -21,6 +21,12 @@ pub trait Law {
 /// $V_{total} = \sum V_i$
 pub struct LawRegistry {
     laws: Vec<Box<dyn Law>>,
+}
+
+impl Default for LawRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LawRegistry {

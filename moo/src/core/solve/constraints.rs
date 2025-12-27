@@ -14,7 +14,10 @@ pub struct FloorConstraint {
 
 impl FloorConstraint {
     pub fn new(y_level: f64, restitution: f64) -> Self {
-        Self { y_level, restitution }
+        Self {
+            y_level,
+            restitution,
+        }
     }
 }
 
@@ -24,21 +27,21 @@ impl Constraint for FloorConstraint {
         for i in 0..n {
             let idx = i * 3;
             let y = state.q[idx + 1];
-            
+
             // Check penetration
             if y < self.y_level {
                 // Positional Projection
                 state.q[idx + 1] = self.y_level;
-                
+
                 // Velocity Reflection (Impulse)
                 let vy = state.v[idx + 1];
                 if vy < 0.0 {
                     state.v[idx + 1] = -vy * self.restitution;
-                    
+
                     // Friction (Simple)
                     let friction = 0.9;
                     state.v[idx] *= friction;
-                    state.v[idx+2] *= friction;
+                    state.v[idx + 2] *= friction;
                 }
             }
         }
@@ -77,25 +80,25 @@ impl Constraint for SphereConstraint {
                 let idx_i = i * 3;
                 let idx_j = j * 3;
 
-                let p1 = glam::DVec3::from_slice(&state.q[idx_i..idx_i+3]);
-                let p2 = glam::DVec3::from_slice(&state.q[idx_j..idx_j+3]);
-                
+                let p1 = glam::DVec3::from_slice(&state.q[idx_i..idx_i + 3]);
+                let p2 = glam::DVec3::from_slice(&state.q[idx_j..idx_j + 3]);
+
                 let diff = p1 - p2;
                 let dist_sq = diff.length_squared();
                 let r_sum = state.radius[i] + state.radius[j];
 
                 if dist_sq < r_sum * r_sum {
-                    let v1 = glam::DVec3::from_slice(&state.v[idx_i..idx_i+3]);
-                    let v2 = glam::DVec3::from_slice(&state.v[idx_j..idx_j+3]);
+                    let v1 = glam::DVec3::from_slice(&state.v[idx_i..idx_i + 3]);
+                    let v2 = glam::DVec3::from_slice(&state.v[idx_j..idx_j + 3]);
                     let rel_vel = v1 - v2;
 
                     let mut dist = dist_sq.sqrt();
                     let mut normal = diff / dist;
-                    
+
                     // Handle exact overlap singularity
                     if dist < 1e-6 {
                         dist = 1e-6;
-                        normal = glam::DVec3::X; 
+                        normal = glam::DVec3::X;
                     }
 
                     let overlap = r_sum - dist;
@@ -106,14 +109,14 @@ impl Constraint for SphereConstraint {
                     // 1. Positional Correction (Projection)
                     // Split overlap based on inverse mass? (Simplification: 0.5 each for now)
                     let correction = normal * (overlap * 0.5);
-                    
+
                     state.q[idx_i] += correction.x;
-                    state.q[idx_i+1] += correction.y;
-                    state.q[idx_i+2] += correction.z;
+                    state.q[idx_i + 1] += correction.y;
+                    state.q[idx_i + 2] += correction.z;
 
                     state.q[idx_j] -= correction.x;
-                    state.q[idx_j+1] -= correction.y;
-                    state.q[idx_j+2] -= correction.z;
+                    state.q[idx_j + 1] -= correction.y;
+                    state.q[idx_j + 2] -= correction.z;
 
                     // 2. Velocity Response
                     let vel_along_normal = rel_vel.dot(normal);
@@ -121,22 +124,22 @@ impl Constraint for SphereConstraint {
                     if vel_along_normal < 0.0 {
                         let j_impulse = -(1.0 + self.restitution) * vel_along_normal;
                         // Assuming equal mass for impulse distribution simplicity in this constraint
-                        // Ideally: j / (1/m1 + 1/m2). 
+                        // Ideally: j / (1/m1 + 1/m2).
                         // Let's do it properly if we can access mass.
                         let inv_mass1 = 1.0 / state.mass[i * 3]; // Mass is duplicated per DOF
                         let inv_mass2 = 1.0 / state.mass[j * 3];
                         let impulse_mag = j_impulse / (inv_mass1 + inv_mass2);
-                        
+
                         let impulse = normal * impulse_mag;
-                        
+
                         // Apply Impulse
                         state.v[idx_i] += impulse.x * inv_mass1;
-                        state.v[idx_i+1] += impulse.y * inv_mass1;
-                        state.v[idx_i+2] += impulse.z * inv_mass1;
+                        state.v[idx_i + 1] += impulse.y * inv_mass1;
+                        state.v[idx_i + 2] += impulse.z * inv_mass1;
 
                         state.v[idx_j] -= impulse.x * inv_mass2;
-                        state.v[idx_j+1] -= impulse.y * inv_mass2;
-                        state.v[idx_j+2] -= impulse.z * inv_mass2;
+                        state.v[idx_j + 1] -= impulse.y * inv_mass2;
+                        state.v[idx_j + 2] -= impulse.z * inv_mass2;
                     }
                 }
             }

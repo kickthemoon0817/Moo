@@ -12,9 +12,9 @@ pub struct ComputeEngine {
 
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
-    sort_bg_layout: wgpu::BindGroupLayout,
+    _sort_bg_layout: wgpu::BindGroupLayout,
     sort_bind_group: wgpu::BindGroup,
-    
+
     // Buffers
     particle_buffer_a: wgpu::Buffer,
     particle_buffer_b: wgpu::Buffer,
@@ -23,7 +23,7 @@ pub struct ComputeEngine {
     offset_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     sort_params_buffer: wgpu::Buffer,
-    
+
     particle_count: u32,
     grid_dim: u32,
 }
@@ -45,7 +45,7 @@ struct SimParams {
     viscosity: f32,
     count: u32,
     grid_dim: u32,
-    _pad: u32, 
+    _pad: u32,
 }
 
 // ... helper for sort params
@@ -65,7 +65,7 @@ impl ComputeEngine {
         let buf_size = particle_size * count as u64;
         let float_size = std::mem::size_of::<f32>() as u64;
         let density_size = float_size * count as u64;
-        
+
         let grid_dim = 16384; // Hash table size
         let pair_size = 8; // u32, u32
         let grid_buf_size = pair_size * count as u64;
@@ -75,14 +75,20 @@ impl ComputeEngine {
         let particle_buffer_a = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Particle Buffer A"),
             size: buf_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::VERTEX,
             mapped_at_creation: false,
         });
 
         let particle_buffer_b = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Particle Buffer B"),
             size: buf_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::VERTEX,
             mapped_at_creation: false,
         });
 
@@ -107,17 +113,17 @@ impl ComputeEngine {
             mapped_at_creation: false,
         });
 
-        let sim_params = SimParams { 
-            dt: 0.005, 
-            h: 25.0, 
-            rho0: 0.01, 
-            stiffness: 2000.0, 
+        let sim_params = SimParams {
+            dt: 0.005,
+            h: 25.0,
+            rho0: 0.01,
+            stiffness: 2000.0,
             viscosity: 200.0,
             count,
-            grid_dim, 
-            _pad: 0 
+            grid_dim,
+            _pad: 0,
         };
-        
+
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sim Params Buffer"),
             contents: bytemuck::cast_slice(&[sim_params]),
@@ -133,12 +139,66 @@ impl ComputeEngine {
         // Main Layout (Simulation + Grid)
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
-                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 4, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 5, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("Main Bind Group Layout"),
         });
@@ -149,32 +209,105 @@ impl ComputeEngine {
             push_constant_ranges: &[],
         });
 
-        let density_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("Density"), layout: Some(&pipeline_layout), module: &shader_sph, entry_point: "calc_density" });
-        let force_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("Force"), layout: Some(&pipeline_layout), module: &shader_sph, entry_point: "calc_force" });
-        let grid_indices_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("Grid Indices"), layout: Some(&pipeline_layout), module: &shader_grid, entry_point: "calc_grid_indices" });
-        let clear_offsets_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("Clear Offsets"), layout: Some(&pipeline_layout), module: &shader_grid, entry_point: "clear_offsets" });
-        let find_offsets_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("Find Offsets"), layout: Some(&pipeline_layout), module: &shader_grid, entry_point: "find_offsets" });
+        let density_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Density"),
+            layout: Some(&pipeline_layout),
+            module: &shader_sph,
+            entry_point: "calc_density",
+        });
+        let force_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Force"),
+            layout: Some(&pipeline_layout),
+            module: &shader_sph,
+            entry_point: "calc_force",
+        });
+        let grid_indices_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Grid Indices"),
+                layout: Some(&pipeline_layout),
+                module: &shader_grid,
+                entry_point: "calc_grid_indices",
+            });
+        let clear_offsets_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Clear Offsets"),
+                layout: Some(&pipeline_layout),
+                module: &shader_grid,
+                entry_point: "clear_offsets",
+            });
+        let find_offsets_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Find Offsets"),
+                layout: Some(&pipeline_layout),
+                module: &shader_grid,
+                entry_point: "find_offsets",
+            });
 
         // Sort Layout (Simplified)
         let sort_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-             entries: &[
-                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-             ],
-             label: Some("Sort Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("Sort Bind Group Layout"),
         });
-        let sort_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Sort Pipeline Layout"), bind_group_layouts: &[&sort_bg_layout], push_constant_ranges: &[] });
-        let sort_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("Sort"), layout: Some(&sort_pipeline_layout), module: &shader_sort, entry_point: "bitonic_sort" });
+        let sort_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Sort Pipeline Layout"),
+            bind_group_layouts: &[&sort_bg_layout],
+            push_constant_ranges: &[],
+        });
+        let sort_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Sort"),
+            layout: Some(&sort_pipeline_layout),
+            module: &shader_sort,
+            entry_point: "bitonic_sort",
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: particle_buffer_a.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: density_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: particle_buffer_b.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: grid_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: offset_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: particle_buffer_a.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: density_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: particle_buffer_b.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: grid_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: offset_buffer.as_entire_binding(),
+                },
             ],
             label: Some("Main Bind Group"),
         });
@@ -184,7 +317,7 @@ impl ComputeEngine {
         let sort_params_align = 256;
         let max_passes = 100;
         let sort_params_size = (sort_params_align * max_passes) as u64;
-        
+
         let sort_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Sort Params Buffer"),
             size: sort_params_size,
@@ -195,12 +328,18 @@ impl ComputeEngine {
         let sort_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &sort_bg_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &sort_params_buffer,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(std::mem::size_of::<SortParams>() as u64),
-                }) },
-                wgpu::BindGroupEntry { binding: 1, resource: grid_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &sort_params_buffer,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(std::mem::size_of::<SortParams>() as u64),
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: grid_buffer.as_entire_binding(),
+                },
             ],
             label: Some("Sort Bind Group"),
         });
@@ -214,7 +353,7 @@ impl ComputeEngine {
             sort_pipeline,
             bind_group_layout,
             bind_group,
-            sort_bg_layout,
+            _sort_bg_layout: sort_bg_layout,
             sort_bind_group,
             particle_buffer_a,
             particle_buffer_b,
@@ -237,7 +376,10 @@ impl ComputeEngine {
 
         // 1. Grid Indices
         {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Grid Indices"), timestamp_writes: None });
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Grid Indices"),
+                timestamp_writes: None,
+            });
             cpass.set_bind_group(0, &self.bind_group, &[]);
             cpass.set_pipeline(&self.grid_indices_pipeline);
             cpass.dispatch_workgroups(work_group_count, 1, 1);
@@ -246,12 +388,14 @@ impl ComputeEngine {
         // 2. Sort (Bitonic)
         // Calculate passes
         let mut n = 1u32;
-        while n < self.particle_count { n *= 2; } // Next POT
-        
+        while n < self.particle_count {
+            n *= 2;
+        } // Next POT
+
         let mut params = Vec::new();
         let mut offsets = Vec::new();
         let align = 256;
-        
+
         let mut k = 2u32;
         while k <= n {
             let mut j = k / 2;
@@ -275,36 +419,42 @@ impl ComputeEngine {
             raw_bytes.extend_from_slice(bytes);
             // Pad
             let pad = align as usize - bytes.len();
-            raw_bytes.extend(std::iter::repeat(0).take(pad));
+            raw_bytes.extend(std::iter::repeat_n(0, pad));
         }
         queue.write_buffer(&self.sort_params_buffer, 0, &raw_bytes);
 
         // Dispatch Sort Loops
         {
-             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Bitonic Sort"), timestamp_writes: None });
-             cpass.set_pipeline(&self.sort_pipeline);
-             
-             for (i, _) in params.iter().enumerate() {
-                 let offset = i as u32 * align;
-                 cpass.set_bind_group(0, &self.sort_bind_group, &[offset]);
-                 cpass.dispatch_workgroups(work_group_count, 1, 1);
-                 // Need global memory barrier between passes? 
-                 // Compute Passes in WGPU process strictly in order, but memory visibility?
-                 // Storage Buffer Read/Write dependency.
-                 // WGPU normally requires separate dispatch calls.
-                 // In same pass, dispatch barrier?
-                 // Safest: Use separate passes if we fear race, but standard is single pass set_pipeline loop.
-                 // "dispatch_workgroups" acts as a barrier for subsequent dispatches in same pass FOR UAV? 
-                 // No, standard Vulkan/D3D12 does not guarantee UAV visibility without barrier.
-                 // WGPU might insert barriers if resources are tracked.
-                 // Let's rely on WGPU tracking.
-             }
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Bitonic Sort"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.sort_pipeline);
+
+            for (i, _) in params.iter().enumerate() {
+                let offset = i as u32 * align;
+                cpass.set_bind_group(0, &self.sort_bind_group, &[offset]);
+                cpass.dispatch_workgroups(work_group_count, 1, 1);
+                // Need global memory barrier between passes?
+                // Compute Passes in WGPU process strictly in order, but memory visibility?
+                // Storage Buffer Read/Write dependency.
+                // WGPU normally requires separate dispatch calls.
+                // In same pass, dispatch barrier?
+                // Safest: Use separate passes if we fear race, but standard is single pass set_pipeline loop.
+                // "dispatch_workgroups" acts as a barrier for subsequent dispatches in same pass FOR UAV?
+                // No, standard Vulkan/D3D12 does not guarantee UAV visibility without barrier.
+                // WGPU might insert barriers if resources are tracked.
+                // Let's rely on WGPU tracking.
+            }
         }
 
         // 3. Clear Offsets
         let grid_wg = (self.grid_dim as f32 / 256.0).ceil() as u32;
         {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Clear Offsets"), timestamp_writes: None });
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Clear Offsets"),
+                timestamp_writes: None,
+            });
             cpass.set_bind_group(0, &self.bind_group, &[]);
             cpass.set_pipeline(&self.clear_offsets_pipeline);
             cpass.dispatch_workgroups(grid_wg, 1, 1);
@@ -312,7 +462,10 @@ impl ComputeEngine {
 
         // 4. Find Offsets
         {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Find Offsets"), timestamp_writes: None });
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Find Offsets"),
+                timestamp_writes: None,
+            });
             cpass.set_bind_group(0, &self.bind_group, &[]);
             cpass.set_pipeline(&self.find_offsets_pipeline);
             cpass.dispatch_workgroups(work_group_count, 1, 1);
@@ -320,7 +473,10 @@ impl ComputeEngine {
 
         // 5. Density
         {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("SPH Density"), timestamp_writes: None });
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("SPH Density"),
+                timestamp_writes: None,
+            });
             cpass.set_bind_group(0, &self.bind_group, &[]);
             cpass.set_pipeline(&self.density_pipeline);
             cpass.dispatch_workgroups(work_group_count, 1, 1);
@@ -328,7 +484,10 @@ impl ComputeEngine {
 
         // 6. Force
         {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("SPH Force"), timestamp_writes: None });
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("SPH Force"),
+                timestamp_writes: None,
+            });
             cpass.set_bind_group(0, &self.bind_group, &[]);
             cpass.set_pipeline(&self.force_pipeline);
             cpass.dispatch_workgroups(work_group_count, 1, 1);
@@ -338,17 +497,35 @@ impl ComputeEngine {
 
         // Ping-pong buffers
         std::mem::swap(&mut self.particle_buffer_a, &mut self.particle_buffer_b);
-        
+
         // Re-create Main Bind Group for next direction
         self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: self.particle_buffer_a.as_entire_binding() }, // New Src
-                wgpu::BindGroupEntry { binding: 2, resource: self.density_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: self.particle_buffer_b.as_entire_binding() }, // New Dst
-                wgpu::BindGroupEntry { binding: 4, resource: self.grid_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: self.offset_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.particle_buffer_a.as_entire_binding(),
+                }, // New Src
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.density_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.particle_buffer_b.as_entire_binding(),
+                }, // New Dst
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.grid_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.offset_buffer.as_entire_binding(),
+                },
             ],
             label: Some("SPH Bind Group"),
         });
@@ -364,10 +541,15 @@ impl ComputeEngine {
         for i in 0..count {
             let idx = i * 3;
             let m_stride = if mass.len() == q.len() { 3 } else { 1 };
-            
+
             data.push(Particle {
-                pos: [q[idx] as f32, q[idx+1] as f32, q[idx+2] as f32, mass[i*m_stride] as f32],
-                vel: [v[idx] as f32, v[idx+1] as f32, v[idx+2] as f32, 0.0],
+                pos: [
+                    q[idx] as f32,
+                    q[idx + 1] as f32,
+                    q[idx + 2] as f32,
+                    mass[i * m_stride] as f32,
+                ],
+                vel: [v[idx] as f32, v[idx + 1] as f32, v[idx + 2] as f32, 0.0],
             });
         }
         // Write to current read source

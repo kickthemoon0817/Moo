@@ -10,7 +10,12 @@ pub struct Spring {
 
 impl Spring {
     pub fn new(k: f64, rest_length: f64, p1_idx: usize, p2_idx: usize) -> Self {
-        Self { k, rest_length, p1_idx, p2_idx }
+        Self {
+            k,
+            rest_length,
+            p1_idx,
+            p2_idx,
+        }
     }
 }
 
@@ -24,8 +29,8 @@ impl Law for Spring {
         }
 
         let dx = q[idx1] - q[idx2];
-        let dy = q[idx1+1] - q[idx2+1];
-        let dz = q[idx1+2] - q[idx2+2];
+        let dy = q[idx1 + 1] - q[idx2 + 1];
+        let dz = q[idx1 + 2] - q[idx2 + 2];
 
         let dist_sq = dx * dx + dy * dy + dz * dz;
         // Manual sqrt for Dual
@@ -38,8 +43,7 @@ impl Law for Spring {
 
         // V = 0.5 * k * (r - r0)^2
         let displacement = dist - Dual::constant(self.rest_length);
-        let potential = displacement * displacement * Dual::constant(0.5 * self.k);
 
-        potential
+        displacement * displacement * Dual::constant(0.5 * self.k)
     }
 }
