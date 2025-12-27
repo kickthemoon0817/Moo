@@ -465,16 +465,6 @@ impl ComputeEngine {
                 let offset = i as u32 * align;
                 cpass.set_bind_group(0, &self.sort_bind_group, &[offset]);
                 cpass.dispatch_workgroups(work_group_count, 1, 1);
-                // Need global memory barrier between passes?
-                // Compute Passes in WGPU process strictly in order, but memory visibility?
-                // Storage Buffer Read/Write dependency.
-                // WGPU normally requires separate dispatch calls.
-                // In same pass, dispatch barrier?
-                // Safest: Use separate passes if we fear race, but standard is single pass set_pipeline loop.
-                // "dispatch_workgroups" acts as a barrier for subsequent dispatches in same pass FOR UAV?
-                // No, standard Vulkan/D3D12 does not guarantee UAV visibility without barrier.
-                // WGPU might insert barriers if resources are tracked.
-                // Let's rely on WGPU tracking.
             }
         }
 

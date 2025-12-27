@@ -2,9 +2,6 @@ use crate::renderer::Renderer;
 use moo::simulation::Simulation;
 use std::sync::Arc;
 use winit::{event::*, event_loop::EventLoop, window::Window};
-// WindowBuilder removed in 0.30? replaced by Window::builder?
-// No, Window::default_attributes().
-// Let's check window creation code.
 
 use egui_wgpu::Renderer as EguiRenderer;
 use egui_winit::State as EguiState;
@@ -80,20 +77,12 @@ impl ApplicationHandler for App {
             let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
             self.window = Some(window.clone());
 
-            // Blocking Async Init for Simplicity
-            // In a real app, you might show a loading screen or spawn a thread.
-            // wgpu creation is async.
+            // Blocking Async Init
+            // We use pollster to block on async wgpu creation since winit's run_app is synchronous.
 
             let window_clone = window.clone();
 
-            // SAFETY: We are blocking the main thread, so `self` is pinned here.
-            // We just need to mutate the Option fields.
-            // pollster::block_on is a common way to run async code in sync contexts (winit 0.30)
             pollster::block_on(async move {
-                // But we can't move `self` into async block easily without Arc<Mutex>.
-                // Or we construct components and assign them back.
-                // Let's construct components and return them.
-
                 let mut renderer = Renderer::new(window_clone.clone()).await;
                 renderer.update_camera_ortho(800.0, 600.0); // Hardcoded init
 
@@ -121,7 +110,6 @@ impl ApplicationHandler for App {
                 (renderer, sim, gui)
             });
 
-            // Wait, pollster::block_on runs the future.
             let (renderer, sim, gui) = pollster::block_on(async {
                 let mut renderer = Renderer::new(window.clone()).await;
                 renderer.update_camera_ortho(800.0, 600.0);
@@ -292,8 +280,6 @@ impl ApplicationHandler for App {
                     eprintln!("Render Error: {:?}", e);
                     event_loop.exit();
                 }
-
-                // Floor Lines Sync removed (legacy)
             }
             _ => {}
         }

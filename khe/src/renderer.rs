@@ -40,7 +40,6 @@ pub struct Renderer {
     pub size: winit::dpi::PhysicalSize<u32>,
 
     // particles
-    // particles
     pipeline: wgpu::RenderPipeline,
     view_buffer: wgpu::Buffer,
 
@@ -291,15 +290,6 @@ impl Renderer {
             glam::Vec3::ZERO,
             glam::Vec3::Y,
         );
-
-        // We pass View and Proj separately? No, shader takes combined view_proj currently.
-        // But for billboarding we usually want separated.
-        // Let's stick to combined first to get visibility, then split for billboarding if needed.
-        // Actually, for "View Space Billboarding" we need the View Matrix.
-        // But `shaders/particles.wgsl` vs_main takes `vertex_index`.
-        // If we want spherical billboarding, we need the Right and Up vectors of the camera.
-        // In Ortho/Rh/LookAt(0,0,100), Right is X, Up is Y. So it's trivial.
-        // We don't need complex view extraction. Quad is just XY plane aligned. Since it's ortho.
 
         let view_proj = proj * view;
         let uniform = ViewUniform {
