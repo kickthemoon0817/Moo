@@ -224,9 +224,14 @@ impl ApplicationHandler<AsyncInitData> for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                // Safely get components
+                if self.renderer.is_none() || self.sim.is_none() {
+                    return;
+                }
+                
                 let renderer = self.renderer.as_mut().unwrap();
                 let sim = self.sim.as_mut().unwrap();
-
+                
                 // Update params from UI
                 let dt = 10.0f32.powf(gui.dt_log);
 
