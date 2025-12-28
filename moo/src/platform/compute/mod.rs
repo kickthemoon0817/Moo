@@ -29,6 +29,18 @@ pub struct ComputeEngine {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct SimConfig {
+    pub dt: f32,
+    pub h: f32,
+    pub rho0: f32,
+    pub stiffness: f32,
+    pub viscosity: f32,
+    pub mouse_pos: [f32; 2],
+    pub mouse_pressed: bool,
+}
+
+#[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Particle {
     pos: [f32; 4], // x, y, z, mass
@@ -219,34 +231,44 @@ impl ComputeEngine {
             label: Some("Density"),
             layout: Some(&pipeline_layout),
             module: &shader_sph,
-            entry_point: "calc_density",
+            entry_point: Some("calc_density"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
         let force_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Force"),
             layout: Some(&pipeline_layout),
             module: &shader_sph,
-            entry_point: "calc_force",
+            entry_point: Some("calc_force"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
         let grid_indices_pipeline =
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("Grid Indices"),
                 layout: Some(&pipeline_layout),
                 module: &shader_grid,
-                entry_point: "calc_grid_indices",
+                entry_point: Some("calc_grid_indices"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
             });
         let clear_offsets_pipeline =
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("Clear Offsets"),
                 layout: Some(&pipeline_layout),
                 module: &shader_grid,
-                entry_point: "clear_offsets",
+                entry_point: Some("clear_offsets"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
             });
         let find_offsets_pipeline =
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("Find Offsets"),
                 layout: Some(&pipeline_layout),
                 module: &shader_grid,
-                entry_point: "find_offsets",
+                entry_point: Some("find_offsets"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
             });
 
         // Sort Layout (Simplified)
@@ -284,7 +306,9 @@ impl ComputeEngine {
             label: Some("Sort"),
             layout: Some(&sort_pipeline_layout),
             module: &shader_sort,
-            entry_point: "bitonic_sort",
+            entry_point: Some("bitonic_sort"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -441,16 +465,6 @@ impl ComputeEngine {
                 let offset = i as u32 * align;
                 cpass.set_bind_group(0, &self.sort_bind_group, &[offset]);
                 cpass.dispatch_workgroups(work_group_count, 1, 1);
-                // Need global memory barrier between passes?
-                // Compute Passes in WGPU process strictly in order, but memory visibility?
-                // Storage Buffer Read/Write dependency.
-                // WGPU normally requires separate dispatch calls.
-                // In same pass, dispatch barrier?
-                // Safest: Use separate passes if we fear race, but standard is single pass set_pipeline loop.
-                // "dispatch_workgroups" acts as a barrier for subsequent dispatches in same pass FOR UAV?
-                // No, standard Vulkan/D3D12 does not guarantee UAV visibility without barrier.
-                // WGPU might insert barriers if resources are tracked.
-                // Let's rely on WGPU tracking.
             }
         }
 
@@ -562,28 +576,18 @@ impl ComputeEngine {
         queue.write_buffer(&self.particle_buffer_a, 0, bytemuck::cast_slice(&data));
     }
 
-    pub fn write_params(
-        &self,
-        queue: &wgpu::Queue,
-        dt: f32,
-        h: f32,
-        rho0: f32,
-        stiffness: f32,
-        viscosity: f32,
-        mouse_pos: [f32; 2],
-        mouse_pressed: bool,
-    ) {
+    pub fn write_params(&self, queue: &wgpu::Queue, config: SimConfig) {
         let params = SimParams {
-            dt,
-            h,
-            rho0,
-            stiffness,
-            viscosity,
+            dt: config.dt,
+            h: config.h,
+            rho0: config.rho0,
+            stiffness: config.stiffness,
+            viscosity: config.viscosity,
             count: self.particle_count,
             grid_dim: self.grid_dim,
             _pad0: 0,
-            mouse_pos,
-            mouse_pressed: if mouse_pressed { 1 } else { 0 },
+            mouse_pos: config.mouse_pos,
+            mouse_pressed: if config.mouse_pressed { 1 } else { 0 },
             _pad1: 0,
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[params]));

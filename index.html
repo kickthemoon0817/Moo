@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moo Physics Engine (WASM)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Physics Engine...</div>
+    <canvas id="khe-canvas"></canvas>
+    
+    <script type="module">
+        import init from './pkg/khe.js';
+
+        async function run() {
+            try {
+                await init();
+                document.getElementById('loading').style.display = 'none';
+            } catch (e) {
+                console.error("WASM Error:", e);
+                document.getElementById('loading').textContent = "Error: " + e;
+            }
+        }
+
+        run();
+    </script>
+</body>
+</html>

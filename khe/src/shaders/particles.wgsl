@@ -21,7 +21,6 @@ fn vs_main(
     @builtin(vertex_index) in_vertex_index: u32,
     instance: InstanceInput,
 ) -> VertexOutput {
-    // Quad coords (2 triangles)
     var uvs = array<vec2<f32>, 4>(
         vec2<f32>(-1.0, -1.0),
         vec2<f32>( 1.0, -1.0),
@@ -30,8 +29,6 @@ fn vs_main(
     );
     let uv = uvs[in_vertex_index];
 
-    // Scale by radius and translate by instance position
-    // We assume 2D visualization in XY plane for now, or 3D view
     let world_pos = instance.position + vec3<f32>(uv * instance.radius, 0.0);
     
     var out: VertexOutput;
