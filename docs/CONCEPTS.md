@@ -56,7 +56,10 @@ We use specific kernels designed for stability (avoiding division by zero or neg
 **Pros**: Unconditionally stable, easy to control (stiffness approx. by iteration count).
 **Cons**: Stiffness depends on time-step and iteration count (fixed by XPBD).
 
-## 4. Time Integration
+## 4. Time Integration & Stability
+The choice of integrator defines the stability and conservation of the simulation.
+
+### Current Method: Symplectic Euler
 For the SPH simulation, we use **Symplectic Euler** (Semi-Implicit Euler):
 
 1.  $\mathbf{v}_{t+1} = \mathbf{v}_t + \mathbf{a}(\mathbf{x}_t) \cdot \Delta t$
@@ -64,8 +67,25 @@ For the SPH simulation, we use **Symplectic Euler** (Semi-Implicit Euler):
 
 **Why?**
 *   **Symplectic**: It preserves the symplectic 2-form area $dp \wedge dq$ in phase space.
-*   **Energy Stability**: Unlike Explicit Euler (which gains energy) or Implicit Euler (which damps energy constantly), Symplectic Euler bounds the energy error, making it stable for long-term orbital or oscillatory motion without artificial damping.
-*   **Performance**: Explicit-like cost (cheap) with Implicit-like stability properties for conservation.
+*   **Energy Stability**: Unlike Explicit Euler (which gains energy) or Implicit Euler (which damps energy constantly), Symplectic Euler bounds the energy error, making it stable for long-term orbital or oscillatory motion.
+*   **Discrete Issues**: Like all fixed-step methods, it suffers from:
+    *   **Tunneling**: High-speed particles passing through thin barriers (bullets through paper).
+    *   **Explosions**: Particles penetrating too deep into repulsive fields in a single step, resulting in massive restoring forces that launch them to infinity.
+
+### Advanced Solutions
+To overcome the limitations of fixed-step integration:
+
+1.  **CFL Condition & Adaptive Sub-Stepping**:
+    *   The **Courant–Friedrichs–Lewy (CFL)** condition states that a particle must not travel further than its interaction radius ($h$) in a single step ($\Delta t < \frac{h}{v_{max}}$).
+    *   **Solution**: Dynamically calculate $\Delta t$ each frame based on the fastest particle using a Compute Shader reduction, and run multiple sub-steps per frame.
+
+2.  **Continuous Collision Detection (CCD)**:
+    *   Instead of point-in-shape checks, compute the time of impact (TOI) for the swept volume of a moving particle against geometry.
+    *   Solves tunneling completely but is computationally expensive ($O(N)$ raycasts).
+
+3.  **Implicit Integration**:
+    *   Solves a system of equations for the state at $t+1$ (e.g., Backward Euler).
+    *   Unconditionally stable (never explodes) but numerically dissipative (fluid looks viscous/syrupy).
 
 ## 5. Compute Architecture (GPU)
 The simulation runs entirely on the GPU using **WGPU Compute Shaders** (WGSL).

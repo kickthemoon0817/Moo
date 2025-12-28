@@ -47,6 +47,12 @@ pub struct Renderer {
     ui_pipeline: wgpu::RenderPipeline,
     ui_buffer: wgpu::Buffer,
     ui_count: u32,
+
+    // Offscreen / Viewport
+    pub render_texture: wgpu::Texture,
+    pub render_view: wgpu::TextureView,
+    pub depth_texture: wgpu::Texture,
+    pub depth_view: wgpu::TextureView,
 }
 
 impl Renderer {
@@ -91,6 +97,39 @@ impl Renderer {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
+
+        // --- Offscreen Setup ---
+        let render_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Offscreen Texture"),
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: config.format, // Match surface format for now
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let render_view = render_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Depth Texture"),
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Uniform Buffer
         let view_uniform = ViewUniform {
@@ -258,6 +297,10 @@ impl Renderer {
             ui_pipeline,
             ui_buffer,
             ui_count: 0,
+            render_texture,
+            render_view,
+            depth_texture,
+            depth_view,
         }
     }
 
@@ -267,6 +310,43 @@ impl Renderer {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+
+            // Resize Offscreen Textures
+            self.render_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Offscreen Texture"),
+                size: wgpu::Extent3d {
+                    width: new_size.width,
+                    height: new_size.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            self.render_view = self
+                .render_texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+
+            self.depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Depth Texture"),
+                size: wgpu::Extent3d {
+                    width: new_size.width,
+                    height: new_size.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            self.depth_view = self
+                .depth_texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
         }
     }
 
@@ -308,8 +388,16 @@ impl Renderer {
         gui_primitives: &[egui::ClippedPrimitive],
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
     ) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
-        let view = output
+        // Render to Offscreen Texture
+        let view = &self.render_view;
+
+        // Note: For now we RENDER to texture, BUT we eventually need to display GUI to screen.
+        // Wait, the Architecture is:
+        // 1. Sim -> Offscreen Texture
+        // 2. GUI (containing Image of Sim) -> Surface (Swapchain)
+        
+        let surface_texture = self.surface.get_current_texture()?;
+        let surface_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -391,14 +479,15 @@ impl Renderer {
                 screen_descriptor,
             );
 
+            // GUI draws to Surface (which contains the docked view of the sim texture)
             let mut gui_pass = encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("GUI Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
+                        view: &surface_view, // Draw GUI to Swapchain
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load, // Draw ON TOP
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), // Clear Main Window
                             store: wgpu::StoreOp::Store,
                         },
                         depth_slice: None,
@@ -413,8 +502,19 @@ impl Renderer {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+        surface_texture.present();
 
         Ok(())
+    }
+
+    pub fn register_texture(
+        &self,
+        gui_renderer: &mut egui_wgpu::Renderer,
+    ) -> egui::TextureId {
+        gui_renderer.register_native_texture(
+            &self.device,
+            &self.render_view,
+            wgpu::FilterMode::Linear,
+        )
     }
 }

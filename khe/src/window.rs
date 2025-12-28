@@ -32,6 +32,9 @@ pub struct Gui {
     // Interaction
     cursor_pos: Option<[f32; 2]>,
     mouse_pressed: bool,
+    
+    // Viewport
+    texture_id: Option<egui::TextureId>,
 }
 
 impl Gui {
@@ -45,6 +48,7 @@ impl Gui {
             dt_log: -2.3, // ~0.005
             cursor_pos: None,
             mouse_pressed: false,
+            texture_id: None,
         }
     }
 }
@@ -135,7 +139,10 @@ impl ApplicationHandler<AsyncInitData> for App {
                         wgpu::TextureFormat::Bgra8UnormSrgb,
                         egui_wgpu::RendererOptions::default(),
                     );
-                    let gui = Gui::new(egui_ctx, egui_state, egui_renderer);
+                    let mut gui = Gui::new(egui_ctx, egui_state, egui_renderer);
+                    
+                    // Register Offscreen Texture
+                    gui.texture_id = Some(renderer.register_texture(&mut gui.renderer));
 
                     (renderer, sim, gui)
                 });
@@ -166,7 +173,10 @@ impl ApplicationHandler<AsyncInitData> for App {
                         wgpu::TextureFormat::Bgra8UnormSrgb,
                         egui_wgpu::RendererOptions::default(),
                     );
-                    let gui = Gui::new(egui_ctx, egui_state, egui_renderer);
+                    let mut gui = Gui::new(egui_ctx, egui_state, egui_renderer);
+                    
+                    // Register Offscreen Texture
+                    gui.texture_id = Some(renderer.register_texture(&mut gui.renderer));
 
                     proxy
                         .send_event(AsyncInitData { renderer, sim, gui })
@@ -235,54 +245,20 @@ impl ApplicationHandler<AsyncInitData> for App {
                 // Update params from UI
                 let dt = 10.0f32.powf(gui.dt_log);
 
-                // Unproject Mouse
                 let mut world_mouse = [0.0, 0.0];
                 let mut is_interacting = false;
-
-                if let Some(pos) = gui.cursor_pos {
-                    let width = renderer.size.width as f32;
-                    let height = renderer.size.height as f32;
-                    let aspect = width / height;
-                    let view_width = 800.0;
-                    let view_height = view_width / aspect;
-
-                    let ndc_x = (pos[0] / width) * 2.0 - 1.0;
-                    let ndc_y = 1.0 - (pos[1] / height) * 2.0;
-
-                    world_mouse[0] = ndc_x * (view_width / 2.0);
-                    world_mouse[1] = ndc_y * (view_height / 2.0);
-
-                    if !gui.ctx.wants_pointer_input() {
-                        is_interacting = gui.mouse_pressed;
-                    }
-                }
-
-                sim.compute.write_params(
-                    renderer.queue(),
-                    moo::platform::compute::SimConfig {
-                        dt,
-                        h: 25.0,
-                        rho0: 0.01,
-                        stiffness: 2000.0,
-                        viscosity: 200.0,
-                        mouse_pos: world_mouse,
-                        mouse_pressed: is_interacting,
-                    },
-                );
-
-                if !gui.paused {
-                    for _ in 0..gui.steps_per_frame {
-                        sim.step(renderer.device(), renderer.queue());
-                    }
-                }
 
                 // Egui Frame
                 let raw_input = gui.state.take_egui_input(window);
                 let full_output = gui.ctx.run(raw_input, |ctx| {
-                    egui::Window::new("Moo Control Panel")
-                        .default_pos([10.0, 10.0])
+                    // 1. Side Panel (Settings)
+                    egui::SidePanel::left("settings_panel")
+                        .resizable(true)
+                        .default_width(200.0)
                         .show(ctx, |ui| {
-                            ui.heading("Simulation Control");
+                            ui.heading("Configuration");
+                            ui.separator();
+
                             if ui
                                 .button(if gui.paused {
                                     "▶ Resume"
@@ -297,6 +273,8 @@ impl ApplicationHandler<AsyncInitData> for App {
                                 sim.reset(renderer.queue());
                             }
 
+                            ui.separator();
+                            ui.label("Simulation Parameters");
                             ui.add(
                                 egui::Slider::new(&mut gui.steps_per_frame, 1..=20)
                                     .text("Steps/Frame"),
@@ -304,10 +282,83 @@ impl ApplicationHandler<AsyncInitData> for App {
                             ui.add(egui::Slider::new(&mut gui.dt_log, -4.0..=-1.0).text("Log(dt)"));
 
                             ui.separator();
+                            ui.label("Stats");
                             ui.label(format!("Particles: {}", sim.n_particles));
-                            ui.label(format!("FPS: {:.1}", 60.0));
+                            ui.label(format!("FPS: {:.1}", 60.0)); // TODO: Real FPS
                         });
+
+                    // 2. Central Panel (Viewport)
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        // Draw Offscreen Texture
+                        if let Some(texture_id) = gui.texture_id {
+                            let available_size = ui.available_size();
+                            let img = egui::Image::new(egui::load::SizedTexture::new(
+                                texture_id,
+                                available_size,
+                            ));
+                            let response = ui.add(img);
+
+                            // Input Translation: Viewport(UI) -> World
+                            let rect = response.rect;
+                            if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
+                                if rect.contains(mouse_pos) {
+                                    // Local coordinates in the Image widget
+                                    let local_x = mouse_pos.x - rect.min.x;
+                                    let local_y = mouse_pos.y - rect.min.y;
+
+                                    // Normalized Device Coordinates (-1 to 1)
+                                    // Note: Inverted Y (Screen y goes down, World y goes up) -- Wait, Projection is orthographic.
+                                    // Renderer Ortho: -half_w to half_w. 0,0 is center.
+                                    // Texture: 0,0 is Top-Left (Vulkan/WGPU y down? No, WGPU NDC y is up, but standard texture sampling is y down 0..1)
+                                    
+                                    // Let's assume standard UV Mapping where (0,0) is Top-Left of the image.
+                                    let uv_x = local_x / rect.width();
+                                    let uv_y = local_y / rect.height();
+
+                                    // Map UV to World (using current camera settings)
+                                    let aspect = rect.width() / rect.height();
+                                    
+                                    // NOTE: We update camera to match the window aspect, but here the aspect might differ due to SidePanel.
+                                    // Ideally we should update camera based on THIS rect size.
+                                    // For now, let's assume loose coupling.
+                                    
+                                    let view_width = 800.0; // Fixed World Width for zoom
+                                    let view_height = view_width / aspect;
+
+                                    let world_x = (uv_x * 2.0 - 1.0) * (view_width / 2.0);
+                                    let world_y = (1.0 - uv_y * 2.0) * (view_height / 2.0); // Flip Y
+
+                                    world_mouse = [world_x, world_y];
+                                    
+                                    // Only interact if hovering viewport
+                                    if ui.input(|i| i.pointer.primary_down()) {
+                                        is_interacting = true;
+                                    }
+                                }
+                            }
+                        }
+                    });
                 });
+
+                // Update params (using newly calculated world_mouse)
+                sim.compute.write_params(
+                    renderer.queue(),
+                    moo::platform::compute::SimConfig {
+                        dt,
+                        h: 25.0,
+                        rho0: 0.01,
+                        stiffness: 2000.0,
+                        viscosity: 200.0,
+                        mouse_pos: world_mouse, // Updated from Viewport logic
+                        mouse_pressed: is_interacting,
+                    },
+                );
+
+                if !gui.paused {
+                    for _ in 0..gui.steps_per_frame {
+                        sim.step(renderer.device(), renderer.queue());
+                    }
+                }
 
                 gui.state
                     .handle_platform_output(window, full_output.platform_output);
@@ -319,6 +370,14 @@ impl ApplicationHandler<AsyncInitData> for App {
                     size_in_pixels: [renderer.size.width, renderer.size.height],
                     pixels_per_point: window.scale_factor() as f32,
                 };
+
+                // Handle Texture Deltas (Fonts, User Images)
+                for (id, image_delta) in &full_output.textures_delta.set {
+                    gui.renderer.update_texture(renderer.device(), renderer.queue(), *id, image_delta);
+                }
+                for id in &full_output.textures_delta.free {
+                    gui.renderer.free_texture(id);
+                }
 
                 if let Err(e) = renderer.render_compute(
                     sim.compute.current_buffer(),
