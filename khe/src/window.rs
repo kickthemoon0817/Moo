@@ -32,9 +32,12 @@ pub struct Gui {
     // Interaction
     cursor_pos: Option<[f32; 2]>,
     mouse_pressed: bool,
-    
+
     // Viewport
     texture_id: Option<egui::TextureId>,
+
+    // Request
+    screenshot_requested: bool,
 }
 
 impl Gui {
@@ -49,6 +52,7 @@ impl Gui {
             cursor_pos: None,
             mouse_pressed: false,
             texture_id: None,
+            screenshot_requested: false,
         }
     }
 }
@@ -69,10 +73,24 @@ struct App {
     // UI State for initialization
     init_width: f64,
     init_height: f64,
+
+    // Automation
+    frame_count: u64,
+    screenshot_frame: Option<u64>,
 }
 
 impl App {
     fn new(proxy: EventLoopProxy<AsyncInitData>) -> Self {
+        // Parse CLI args for screenshot frame
+        let mut screenshot_frame = None;
+        for arg in std::env::args() {
+            if let Some(f) = arg.strip_prefix("--screenshot=")
+                .and_then(|s| s.parse().ok()) 
+            {
+                screenshot_frame = Some(f);
+            }
+        }
+
         Self {
             proxy,
             window: None,
@@ -81,6 +99,8 @@ impl App {
             gui: None,
             init_width: 800.0,
             init_height: 600.0,
+            frame_count: 0,
+            screenshot_frame,
         }
     }
 }
@@ -140,7 +160,7 @@ impl ApplicationHandler<AsyncInitData> for App {
                         egui_wgpu::RendererOptions::default(),
                     );
                     let mut gui = Gui::new(egui_ctx, egui_state, egui_renderer);
-                    
+
                     // Register Offscreen Texture
                     gui.texture_id = Some(renderer.register_texture(&mut gui.renderer));
 
@@ -174,7 +194,7 @@ impl ApplicationHandler<AsyncInitData> for App {
                         egui_wgpu::RendererOptions::default(),
                     );
                     let mut gui = Gui::new(egui_ctx, egui_state, egui_renderer);
-                    
+
                     // Register Offscreen Texture
                     gui.texture_id = Some(renderer.register_texture(&mut gui.renderer));
 
@@ -238,10 +258,10 @@ impl ApplicationHandler<AsyncInitData> for App {
                 if self.renderer.is_none() || self.sim.is_none() {
                     return;
                 }
-                
+
                 let renderer = self.renderer.as_mut().unwrap();
                 let sim = self.sim.as_mut().unwrap();
-                
+
                 // Update params from UI
                 let dt = 10.0f32.powf(gui.dt_log);
 
@@ -273,6 +293,14 @@ impl ApplicationHandler<AsyncInitData> for App {
                                 sim.reset(renderer.queue());
                             }
 
+                            if ui.button("📷 Screenshot").clicked() {
+                                // Just a flag, handled in render loop?
+                                // Actually, I need to pass the request to render_compute.
+                                // But Render Compute is called LATER.
+                                // I need to store the request in `gui` state?
+                                gui.screenshot_requested = true;
+                            }
+
                             ui.separator();
                             ui.label("Simulation Parameters");
                             ui.add(
@@ -300,6 +328,7 @@ impl ApplicationHandler<AsyncInitData> for App {
 
                             // Input Translation: Viewport(UI) -> World
                             let rect = response.rect;
+                            #[allow(clippy::collapsible_if)]
                             if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
                                 if rect.contains(mouse_pos) {
                                     // Local coordinates in the Image widget
@@ -310,18 +339,18 @@ impl ApplicationHandler<AsyncInitData> for App {
                                     // Note: Inverted Y (Screen y goes down, World y goes up) -- Wait, Projection is orthographic.
                                     // Renderer Ortho: -half_w to half_w. 0,0 is center.
                                     // Texture: 0,0 is Top-Left (Vulkan/WGPU y down? No, WGPU NDC y is up, but standard texture sampling is y down 0..1)
-                                    
+
                                     // Let's assume standard UV Mapping where (0,0) is Top-Left of the image.
                                     let uv_x = local_x / rect.width();
                                     let uv_y = local_y / rect.height();
 
                                     // Map UV to World (using current camera settings)
                                     let aspect = rect.width() / rect.height();
-                                    
+
                                     // NOTE: We update camera to match the window aspect, but here the aspect might differ due to SidePanel.
                                     // Ideally we should update camera based on THIS rect size.
                                     // For now, let's assume loose coupling.
-                                    
+
                                     let view_width = 800.0; // Fixed World Width for zoom
                                     let view_height = view_width / aspect;
 
@@ -329,7 +358,7 @@ impl ApplicationHandler<AsyncInitData> for App {
                                     let world_y = (1.0 - uv_y * 2.0) * (view_height / 2.0); // Flip Y
 
                                     world_mouse = [world_x, world_y];
-                                    
+
                                     // Only interact if hovering viewport
                                     if ui.input(|i| i.pointer.primary_down()) {
                                         is_interacting = true;
@@ -373,10 +402,35 @@ impl ApplicationHandler<AsyncInitData> for App {
 
                 // Handle Texture Deltas (Fonts, User Images)
                 for (id, image_delta) in &full_output.textures_delta.set {
-                    gui.renderer.update_texture(renderer.device(), renderer.queue(), *id, image_delta);
+                    gui.renderer.update_texture(
+                        renderer.device(),
+                        renderer.queue(),
+                        *id,
+                        image_delta,
+                    );
                 }
                 for id in &full_output.textures_delta.free {
                     gui.renderer.free_texture(id);
+                }
+
+                // Determine Capture Request
+                let mut capture_path = None;
+                let manual_path = std::path::Path::new(
+                    "/Users/khemoo/.gemini/antigravity/brain/7c1dfcc0-c8f9-4947-b7ea-48bfdab9b1e1/manual_screenshot.png",
+                );
+                let auto_path = std::path::Path::new(
+                    "/Users/khemoo/.gemini/antigravity/brain/7c1dfcc0-c8f9-4947-b7ea-48bfdab9b1e1/screenshot.png",
+                );
+
+                if gui.screenshot_requested {
+                    capture_path = Some(manual_path);
+                    gui.screenshot_requested = false;
+                }
+
+                // Auto-Screenshot via CLI
+                self.frame_count += 1;
+                if self.screenshot_frame == Some(self.frame_count) {
+                    capture_path = Some(auto_path);
                 }
 
                 if let Err(e) = renderer.render_compute(
@@ -385,8 +439,15 @@ impl ApplicationHandler<AsyncInitData> for App {
                     Some(&mut gui.renderer),
                     &clipped_primitives,
                     &screen_descriptor,
+                    capture_path,
                 ) {
                     eprintln!("Render Error: {:?}", e);
+                    event_loop.exit();
+                }
+
+                if self.screenshot_frame.is_some()
+                    && self.frame_count >= self.screenshot_frame.unwrap()
+                {
                     event_loop.exit();
                 }
             }

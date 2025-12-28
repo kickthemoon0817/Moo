@@ -107,3 +107,23 @@ Since we cannot read and write to the same buffer safely in parallel (race condi
 *   `ParticleBuffer A` (Read) -> `Compute` -> `ParticleBuffer B` (Write)
 *   **Swap**
 *   `ParticleBuffer B` (Read) -> `Compute` -> `ParticleBuffer A` (Write)
+
+## 6. Advanced Continuum & Field Theories (Phase 18)
+To achieve high-fidelity scientific simulation beyond standard game physics, we incorporate non-linear and field-theoretic models.
+
+### Non-Linear Constitutive Models (Hyperelasticity)
+Standard "Spring Constraints" (Hooke's Law) satisfy linear elasticity ($F = -kx$). This is accurate only for small deformations. For "real world" soft bodies (rubber, biological tissue) undergoing large deformations, we use **Hyperelastic** models derived from a Strain Energy Density function ($\Psi$).
+
+*   **Neo-Hookean Model**: 
+    $$ \Psi = C_1 (I_1 - 3) + D_1 (J - 1)^2 $$
+    Where $I_1$ is the first invariant of the deformation gradient tensor $\mathbf{F}$, and $J = \det(\mathbf{F})$.
+    This models non-linear stiffening—the material fights back harder the more it is stretched, unlike linear springs which can stretch infinitely.
+
+### Relativistic Gravity (Post-Newtonian)
+Newtonian Gravity ($F = G \frac{M m}{r^2}$) is an approximation valid for slow speeds and weak fields. To simulate cosmic accuracy (e.g., perihelion precession of Mercury or black hole orbits), we effectively apply **Post-Newtonian Expansions** to the potential.
+*   We add a perturbative potential term $\Phi_{PN} \propto \frac{L^2}{r^3}$ effectively simulating the relativistic effects without a full General Relativity tensor solver.
+
+### Field-Based Multi-Physics
+Instead of treating Fluids, Rigid Bodies, and Temperature as separate systems, we aim for a unified Field approach:
+*   **Thermal**: Advection-Diffusion equation solved on the particle field ($\frac{dT}{dt} = \alpha \nabla^2 T$).
+*   **Electromagnetism**: Solving Maxwell's equations for charged fluid particles (Plasmas), allowing for complex behaviors like magnetic confinement.

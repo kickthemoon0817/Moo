@@ -87,7 +87,7 @@ impl Renderer {
 
         let surface_caps = surface.get_capabilities(&adapter);
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format: surface_caps.formats[0],
             width: size.width,
             height: size.height,
@@ -109,8 +109,10 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: config.format, // Match surface format for now
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let render_view = render_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -143,7 +145,7 @@ impl Renderer {
 
         // 1. Particle Pipeline
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/particles.wgsl"));
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/refraction.wgsl"));
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -200,7 +202,7 @@ impl Renderer {
                 entry_point: Some("fs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: wgpu::TextureFormat::Bgra8Unorm,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -322,8 +324,10 @@ impl Renderer {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: self.config.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                format: wgpu::TextureFormat::Bgra8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
             self.render_view = self
@@ -341,7 +345,8 @@ impl Renderer {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Depth32Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
             self.depth_view = self
@@ -387,6 +392,7 @@ impl Renderer {
         gui_renderer: Option<&mut egui_wgpu::Renderer>,
         gui_primitives: &[egui::ClippedPrimitive],
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        capture_request: Option<&std::path::Path>,
     ) -> Result<(), wgpu::SurfaceError> {
         // Render to Offscreen Texture
         let view = &self.render_view;
@@ -395,7 +401,7 @@ impl Renderer {
         // Wait, the Architecture is:
         // 1. Sim -> Offscreen Texture
         // 2. GUI (containing Image of Sim) -> Surface (Swapchain)
-        
+
         let surface_texture = self.surface.get_current_texture()?;
         let surface_view = surface_texture
             .texture
@@ -438,7 +444,7 @@ impl Renderer {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -502,19 +508,112 @@ impl Renderer {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Check for Screenshot Request
+        if let Some(path) = capture_request {
+            let img = self.capture_texture(
+                &surface_texture.texture,
+                self.config.width,
+                self.config.height,
+            );
+            img.save(path).expect("Failed to save screenshot");
+            println!("Screenshot saved to {:?}", path);
+        }
+
         surface_texture.present();
 
         Ok(())
     }
 
-    pub fn register_texture(
+    pub fn capture_texture(
         &self,
-        gui_renderer: &mut egui_wgpu::Renderer,
-    ) -> egui::TextureId {
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> image::RgbaImage {
+        // 1. Create a buffer to read from
+        let _buffer_size = (width * height * 4) as wgpu::BufferAddress;
+        // Align to 256 bytes (Texture copy requirement)
+        let bytes_per_pixel = 4;
+        let unpadded_bytes_per_row = width * bytes_per_pixel;
+        let align = 256;
+        let padded_bytes_per_row_padding = (align - unpadded_bytes_per_row % align) % align;
+        let padded_bytes_per_row = unpadded_bytes_per_row + padded_bytes_per_row_padding;
+
+        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Screenshot Buffer"),
+            size: (padded_bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        // 2. Copy Texture to Buffer
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Screenshot Encoder"),
+            });
+
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                aspect: wgpu::TextureAspect::All,
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &output_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.queue.submit(Some(encoder.finish()));
+
+        // 3. Map the buffer
+        let buffer_slice = output_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        loop {
+            let _ = self.device.poll(wgpu::PollType::Poll);
+            if rx.try_recv().is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        // 4. Read data
+        let data = buffer_slice.get_mapped_range();
+
+        // Remove padding
+        let mut pixels: Vec<u8> = Vec::with_capacity((width * height * 4) as usize);
+        for i in 0..height {
+            let start = (i * padded_bytes_per_row) as usize;
+            let end = start + unpadded_bytes_per_row as usize;
+            pixels.extend_from_slice(&data[start..end]);
+        }
+
+        image::RgbaImage::from_raw(width, height, pixels).unwrap()
+    }
+
+    pub fn register_texture(&self, gui_renderer: &mut egui_wgpu::Renderer) -> egui::TextureId {
         gui_renderer.register_native_texture(
             &self.device,
             &self.render_view,
             wgpu::FilterMode::Linear,
         )
     }
+
+    // Old capture_screenshot removed or refactored
 }

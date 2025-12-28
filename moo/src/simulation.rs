@@ -15,9 +15,11 @@ impl Simulation {
         let mut state = PhaseSpace::new(dof); // Fluid particles
 
         // Initialize Fluid Block
-        let spacing = 10.0;
-        let cols = 10;
-        let start_y = 100.0;
+        let spacing = 15.0; // Safer density (h=25.0)
+        let cols = 64;
+        let start_y = -300.0; // Start lower, effectively -300.0 to +1140.0 range. 
+        // 64*15 = 960. -300 + 960 = 660.
+        // Center of mass ~ 180. Visible.
 
         for i in 0..n_particles as usize {
             let col = i % cols;
@@ -40,7 +42,7 @@ impl Simulation {
             state,
             compute,
             n_particles,
-            running: true,
+            running: false, // Debug: Start paused
         }
     }
 
