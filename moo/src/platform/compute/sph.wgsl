@@ -166,7 +166,11 @@ fn calc_force(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     let rho_j = density[j];
                     let p_j = params.stiffness * (pow(max(rho_j / params.rho0, 1.0), 7.0) - 1.0);
                     
-                    let term_p = (p_i / (rho_i * rho_i)) + (p_j / (rho_j * rho_j));
+                    // Stability: Clamp density to avoid division by zero (though unlikely with proper H)
+                    let safe_rho_i = max(rho_i, 0.0001);
+                    let safe_rho_j = max(rho_j, 0.0001);
+
+                    let term_p = (p_i / (safe_rho_i * safe_rho_i)) + (p_j / (safe_rho_j * safe_rho_j));
                     force_press -= pj.pos.w * term_p * spiky_grad(diff, r, h);
 
                     let term_v = (h - r);
@@ -207,7 +211,14 @@ fn calc_force(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let g = vec3<f32>(0.0, -500.0, 0.0);
     
     let mass_i = pi.pos.w;
-    let accel = force_press + (force_visc / mass_i) + g + (mouse_force / mass_i); 
+    var accel = force_press + (force_visc / mass_i) + g + (mouse_force / mass_i); 
+    
+    // Stability: Clamp Acceleration
+    let max_accel = 50000.0; 
+    let accel_len = length(accel);
+    if (accel_len > max_accel) {
+        accel = (accel / accel_len) * max_accel;
+    } 
     
     // Symplectic Euler
     let vel = pi.vel.xyz + accel * params.dt;
