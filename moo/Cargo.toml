@@ -3,6 +3,14 @@ name = "moo"
 version = "0.0.4"
 edition = "2024"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+grpc = ["dep:tonic", "dep:prost", "dep:tokio", "dep:futures"]
+python = ["dep:pyo3"]
+
 [dependencies]
 anyhow = "1"
 tracing = "0.1"
@@ -16,5 +24,15 @@ ron = "0.8"
 pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }
 glam = "0.30"
+
+# Phase 17: External Control
+tonic = { version = "0.12", optional = true }
+prost = { version = "0.13", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
+futures = { version = "0.3", optional = true }
+pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
+
+[build-dependencies]
+tonic-build = "0.12"
 
 

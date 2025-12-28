@@ -1,9 +1,12 @@
 use crate::core::state::PhaseSpace;
-use crate::platform::compute::ComputeEngine;
+use crate::platform::compute::{ComputeEngine, SimConfig};
+use crate::control::{CommandQueue, SimCommand};
 
 pub struct Simulation {
     pub state: PhaseSpace,
     pub compute: ComputeEngine,
+    pub config: SimConfig,
+    pub command_queue: Option<CommandQueue>,
     pub n_particles: u32,
     pub running: bool,
 }
@@ -38,9 +41,22 @@ impl Simulation {
         // --- GPGPU Setup ---
         let compute = ComputeEngine::new(device, n_particles).await;
 
+        // Default Config
+        let config = SimConfig {
+            dt: 0.005,
+            h: 25.0,
+            rho0: 0.01,
+            stiffness: 2000.0,
+            viscosity: 200.0,
+            mouse_pos: [0.0, 0.0],
+            mouse_pressed: false,
+        };
+
         Self {
             state,
             compute,
+            config,
+            command_queue: None,
             n_particles,
             running: false, // Debug: Start paused
         }
@@ -71,12 +87,37 @@ impl Simulation {
     }
 
     pub fn step(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        // Process External Commands
+        self.process_commands(queue);
+
         if self.running {
+            // Push latest config before step
+            self.compute.write_params(queue, self.config);
+
             // GPU Physics Step
             // Run multiple substeps for stability
             for _ in 0..10 {
                 self.compute.step(device, queue);
             }
+        }
+    }
+
+    fn process_commands(&mut self, queue: &wgpu::Queue) {
+        if let Some(queue_ref) = self.command_queue.take() {
+            while let Some(cmd) = queue_ref.try_recv() {
+                match cmd {
+                    SimCommand::Pause => self.running = false,
+                    SimCommand::Resume => self.running = true,
+                    SimCommand::Step(n) => {
+                        tracing::info!("Step command received: {}", n);
+                    }, 
+                    SimCommand::SetDt(dt) => self.config.dt = dt,
+                    SimCommand::SetGravity(_, _) => { /* TODO */ },
+                    SimCommand::Reset => self.reset(queue),
+                }
+            }
+            // Return ownership
+            self.command_queue = Some(queue_ref);
         }
     }
 
