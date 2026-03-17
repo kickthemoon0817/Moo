@@ -8,7 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-grpc = ["dep:tonic", "dep:prost", "dep:tokio", "dep:futures"]
+grpc = ["dep:tonic", "dep:prost", "dep:tokio", "dep:futures", "dep:tonic-build"]
 python = ["dep:pyo3"]
 
 [dependencies]
@@ -33,6 +33,6 @@ futures = { version = "0.3", optional = true }
 pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-build = { version = "0.12", optional = true }
 
 
