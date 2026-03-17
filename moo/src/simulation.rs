@@ -1,47 +1,66 @@
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use crate::core::state::PhaseSpace;
 use crate::platform::compute::{ComputeEngine, SimConfig};
-use crate::control::{CommandQueue, SimCommand};
+use crate::control::{CommandQueue, SimCommand, SimMetrics};
+
+/// Shared initialization parameters so `new()` and `reset()` produce identical initial state.
+#[derive(Debug, Clone)]
+pub struct SimInitConfig {
+    pub n_particles: u32,
+    pub spacing: f64,
+    pub cols: usize,
+    pub start_y: f64,
+}
+
+impl SimInitConfig {
+    fn init_state(&self, state: &mut PhaseSpace) {
+        for i in 0..self.n_particles as usize {
+            let col = i % self.cols;
+            let row = i / self.cols;
+            state.q[i * 3] = (col as f64) * self.spacing - (self.cols as f64 * self.spacing / 2.0);
+            state.q[i * 3 + 1] = self.start_y + (row as f64) * self.spacing;
+            state.q[i * 3 + 2] = 0.0;
+
+            state.v[i * 3] = 0.0;
+            state.v[i * 3 + 1] = 0.0;
+            state.v[i * 3 + 2] = 0.0;
+
+            state.mass[i * 3] = 1.0;
+            state.mass[i * 3 + 1] = 1.0;
+            state.mass[i * 3 + 2] = 1.0;
+
+            state.radius[i] = self.spacing / 2.0;
+        }
+    }
+}
 
 pub struct Simulation {
     pub state: PhaseSpace,
     pub compute: ComputeEngine,
     pub config: SimConfig,
     pub command_queue: Option<CommandQueue>,
+    pub init_config: SimInitConfig,
+    pub metrics: Option<Arc<SimMetrics>>,
     pub n_particles: u32,
     pub running: bool,
 }
 
 impl Simulation {
     pub async fn new(device: &wgpu::Device, n_particles: u32) -> Self {
-        // --- Physics Setup ---
+        let init_config = SimInitConfig {
+            n_particles,
+            spacing: 15.0,
+            cols: 64,
+            start_y: -300.0,
+        };
+
         let dof = n_particles as usize * 3;
-        let mut state = PhaseSpace::new(dof); // Fluid particles
+        let mut state = PhaseSpace::new(dof);
+        init_config.init_state(&mut state);
 
-        // Initialize Fluid Block
-        let spacing = 15.0; // Safer density (h=25.0)
-        let cols = 64;
-        let start_y = -300.0; // Start lower, effectively -300.0 to +1140.0 range. 
-        // 64*15 = 960. -300 + 960 = 660.
-        // Center of mass ~ 180. Visible.
-
-        for i in 0..n_particles as usize {
-            let col = i % cols;
-            let row = i / cols;
-            state.q[i * 3] = (col as f64) * spacing - (cols as f64 * spacing / 2.0);
-            state.q[i * 3 + 1] = start_y + (row as f64) * spacing;
-            state.q[i * 3 + 2] = 0.0;
-
-            state.mass[i * 3] = 1.0;
-            state.mass[i * 3 + 1] = 1.0;
-            state.mass[i * 3 + 2] = 1.0;
-
-            state.radius[i] = spacing / 2.0;
-        }
-
-        // --- GPGPU Setup ---
         let compute = ComputeEngine::new(device, n_particles).await;
 
-        // Default Config
         let config = SimConfig {
             dt: 0.005,
             h: 25.0,
@@ -57,66 +76,60 @@ impl Simulation {
             compute,
             config,
             command_queue: None,
+            init_config,
+            metrics: None,
             n_particles,
-            running: false, // Debug: Start paused
+            running: false,
         }
     }
 
     pub fn reset(&mut self, queue: &wgpu::Queue) {
-        // Re-initialize state logic here (duplicated from new for now)
-        let spacing = 10.0;
-        let cols = 10;
-        let start_y = 100.0;
+        self.init_config.init_state(&mut self.state);
 
-        for i in 0..self.n_particles as usize {
-            let col = i % cols;
-            let row = i / cols;
-            self.state.q[i * 3] = (col as f64) * spacing - (cols as f64 * spacing / 2.0);
-            self.state.q[i * 3 + 1] = start_y + (row as f64) * spacing;
-            self.state.q[i * 3 + 2] = 0.0;
-
-            // Velocity Reset
-            self.state.v[i * 3] = 0.0;
-            self.state.v[i * 3 + 1] = 0.0;
-            self.state.v[i * 3 + 2] = 0.0;
-        }
-
-        // Upload reset state
         self.compute
             .write_state(queue, &self.state.q, &self.state.v, &self.state.mass);
+
+        if let Some(ref metrics) = self.metrics {
+            metrics.step_count.store(0, Ordering::Relaxed);
+        }
     }
 
     pub fn step(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        // Process External Commands
-        self.process_commands(queue);
+        self.process_commands(device, queue);
 
         if self.running {
-            // Push latest config before step
             self.compute.write_params(queue, self.config);
 
-            // GPU Physics Step
-            // Run multiple substeps for stability
             for _ in 0..10 {
                 self.compute.step(device, queue);
+            }
+
+            if let Some(ref metrics) = self.metrics {
+                metrics.step_count.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
 
-    fn process_commands(&mut self, queue: &wgpu::Queue) {
+    fn process_commands(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         if let Some(queue_ref) = self.command_queue.take() {
             while let Some(cmd) = queue_ref.try_recv() {
                 match cmd {
                     SimCommand::Pause => self.running = false,
                     SimCommand::Resume => self.running = true,
                     SimCommand::Step(n) => {
-                        tracing::info!("Step command received: {}", n);
-                    }, 
+                        self.compute.write_params(queue, self.config);
+                        for _ in 0..n {
+                            self.compute.step(device, queue);
+                        }
+                        if let Some(ref metrics) = self.metrics {
+                            metrics.step_count.fetch_add(n as u64, Ordering::Relaxed);
+                        }
+                    },
                     SimCommand::SetDt(dt) => self.config.dt = dt,
                     SimCommand::SetGravity(_, _) => { /* TODO */ },
                     SimCommand::Reset => self.reset(queue),
                 }
             }
-            // Return ownership
             self.command_queue = Some(queue_ref);
         }
     }
