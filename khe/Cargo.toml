@@ -6,6 +6,10 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+grpc = ["moo/grpc", "dep:tonic", "dep:prost", "dep:tokio"]
+
 [dependencies]
 moo = { path = "../moo" }
 winit = { version = "0.30", features = ["rwh_06"] }
@@ -17,6 +21,11 @@ egui = "0.33"
 egui-wgpu = "0.33"
 egui-winit = "0.33"
 image = "0.25.9"
+
+# Optional gRPC Client
+tonic = { version = "0.12", optional = true }
+prost = { version = "0.13", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

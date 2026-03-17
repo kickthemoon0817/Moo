@@ -19,3 +19,16 @@ pub mod investigation {
 }
 
 pub mod simulation;
+pub mod control;
+
+#[cfg(feature = "grpc")]
+pub mod grpc {
+    tonic::include_proto!("khemoo.moo.v1");
+}
+
+#[cfg(feature = "grpc")]
+pub mod server;
+
+#[cfg(feature = "python")]
+pub mod python;
+

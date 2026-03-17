@@ -1,0 +1,43 @@
+syntax = "proto3";
+package khemoo.moo.v1;
+
+service SimulationControl {
+    // Lifecycle
+    rpc Start (Empty) returns (Status);
+    rpc Pause (Empty) returns (Status);
+    rpc Resume (Empty) returns (Status);
+    rpc Reset (Empty) returns (Status);
+
+    // Stepping
+    rpc Step (StepRequest) returns (StateSnapshot);
+
+    // Parameters
+    rpc SetParams (ParamUpdate) returns (Status);
+
+    // State Access
+    rpc GetState (Empty) returns (StateSnapshot);
+}
+
+message Empty {}
+
+message Status {
+    bool success = 1;
+    string message = 2;
+}
+
+message StepRequest {
+    uint32 steps = 1;
+}
+
+message ParamUpdate {
+    optional float dt = 1;
+    optional float gravity_y = 2;
+    // Add more params as needed
+}
+
+message StateSnapshot {
+    uint64 step_count = 1;
+    uint32 particle_count = 2;
+    // We can add raw bytes for positions if needed for analysis
+    // bytes position_data = 3; 
+}

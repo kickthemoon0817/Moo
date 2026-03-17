@@ -31,7 +31,7 @@ fn vs_main(
     );
     let uv = uvs[in_vertex_index];
 
-    let radius = 25.0; // Hardcoded radius
+    let radius = instance.radius;
     let world_pos = instance.position + vec3<f32>(uv * radius, 0.0);
     
     var out: VertexOutput;

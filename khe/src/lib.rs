@@ -1,5 +1,6 @@
 pub mod renderer;
 pub mod window;
+pub mod backend;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
